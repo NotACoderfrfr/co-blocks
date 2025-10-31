@@ -8,7 +8,6 @@ export const register = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    // Check if email already exists
     const existingUser = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", args.email))
@@ -18,11 +17,11 @@ export const register = mutation({
       throw new Error("Email already registered");
     }
 
-    // Create new user
     const userId = await ctx.db.insert("users", {
       email: args.email,
-      password: args.password,
+      passwordHash: args.password,
       name: args.name,
+      createdAt: Date.now(),
     });
 
     return userId;
@@ -44,7 +43,7 @@ export const login = mutation({
       throw new Error("User not found");
     }
 
-    if (user.password !== args.password) {
+    if (user.passwordHash !== args.password) {
       throw new Error("Invalid password");
     }
 
