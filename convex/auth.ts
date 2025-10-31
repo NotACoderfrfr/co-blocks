@@ -1,77 +1,60 @@
-"use node";
 import { v } from "convex/values";
-import { action } from "./_generated/server";
-import { api, internal } from "./_generated/api";
-import crypto from "crypto";
+import { mutation, query } from "./_generated/server";
 
-function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
-  return `${salt}:${hash}`;
-}
-
-function verifyPassword(password: string, storedHash: string): boolean {
-  const [salt, hash] = storedHash.split(":");
-  const hashToVerify = crypto.scryptSync(password, salt, 64).toString("hex");
-  return hash === hashToVerify;
-}
-
-export const register = action({
+export const register = mutation({
   args: {
     email: v.string(),
     password: v.string(),
-    name: v.optional(v.string()),
+    name: v.string(),
   },
   handler: async (ctx, args) => {
-    // Check if user exists
-    const existing = await ctx.runQuery(internal.authHelpers.getUserByEmail, {
-      email: args.email,
-    });
+    // Check if email already exists
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
 
-    if (existing) {
+    if (existingUser) {
       throw new Error("Email already registered");
     }
 
-    // Hash password
-    const passwordHash = hashPassword(args.password);
-
-    // Create user
-    const userId = await ctx.runMutation(internal.authHelpers.createUser, {
+    // Create new user
+    const userId = await ctx.db.insert("users", {
       email: args.email,
-      passwordHash,
+      password: args.password,
       name: args.name,
     });
 
-    return { userId, email: args.email };
+    return userId;
   },
 });
 
-export const login = action({
+export const login = mutation({
   args: {
     email: v.string(),
     password: v.string(),
   },
   handler: async (ctx, args) => {
-    // Get user
-    const user = await ctx.runQuery(internal.authHelpers.getUserByEmail, {
-      email: args.email,
-    });
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
 
     if (!user) {
-      throw new Error("Invalid email or password");
+      throw new Error("User not found");
     }
 
-    // Verify password
-    const isValid = verifyPassword(args.password, user.passwordHash);
-
-    if (!isValid) {
-      throw new Error("Invalid email or password");
+    if (user.password !== args.password) {
+      throw new Error("Invalid password");
     }
 
-    return {
-      userId: user._id,
-      email: user.email,
-      name: user.name,
-    };
+    return user._id;
+  },
+});
+
+export const getUser = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
   },
 });
