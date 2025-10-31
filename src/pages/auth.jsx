@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
@@ -14,6 +14,14 @@ export default function AuthPage() {
 
   const register = useMutation(api.auth.register)
   const login = useMutation(api.auth.login)
+
+  useEffect(() => {
+    if (router.query.mode === 'register') {
+      setMode('register')
+    } else {
+      setMode('login')
+    }
+  }, [router.query.mode])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -133,6 +141,7 @@ export default function AuthPage() {
                 onClick={() => {
                   setMode(mode === 'login' ? 'register' : 'login')
                   setError('')
+                  router.push(mode === 'login' ? '/auth?mode=register' : '/auth?mode=login')
                 }}
                 className="text-purple-400 hover:text-purple-300 ml-2 font-medium"
               >

@@ -49,13 +49,13 @@ export default function LandingPage() {
               </div>
               <div className="flex items-center space-x-4">
                 <button 
-                  onClick={() => router.push('/auth')}
+                  onClick={() => router.push('/auth?mode=login')}
                   className="text-sm text-gray-400 hover:text-white transition-colors"
                 >
                   Log in
                 </button>
                 <button 
-                  onClick={() => router.push('/auth')}
+                  onClick={() => router.push('/auth?mode=register')}
                   className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all neon-glow"
                 >
                   Register now
@@ -83,7 +83,7 @@ export default function LandingPage() {
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <button 
-                  onClick={() => router.push('/auth')}
+                  onClick={() => router.push('/auth?mode=register')}
                   className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all neon-glow"
                 >
                   Register now →
