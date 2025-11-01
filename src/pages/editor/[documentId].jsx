@@ -15,7 +15,6 @@ export default function EditorPage() {
   const [document, setDocument] = useState(null)
   const [userRole, setUserRole] = useState('read')
   const convex = useConvex()
-  const lastFetchRef = useRef(null)
   const isUserEditingRef = useRef(false)
   const editTimeoutRef = useRef(null)
 
@@ -31,12 +30,8 @@ export default function EditorPage() {
     try {
       const doc = await convex.query(api.documents.getDocument, { documentId })
       if (doc) {
-        const contentStr = JSON.stringify(doc.content)
-        if (contentStr !== lastFetchRef.current) {
-          console.log('Content updated!')
-          lastFetchRef.current = contentStr
-          setDocument(doc)
-        }
+        console.log('Fetched document, updating state')
+        setDocument(doc)
       }
     } catch (err) {
       console.error('Fetch error:', err)
@@ -102,10 +97,12 @@ export default function EditorPage() {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
     saveTimeoutRef.current = setTimeout(async () => {
       try {
+        console.log('Saving content...')
         await saveContent({ documentId, content: JSON.stringify(content), userId })
         if (title) {
           await updateDocument({ documentId, content: JSON.stringify(content), title })
         }
+        console.log('Content saved!')
       } catch (err) {
         console.error('Error saving:', err)
       }
@@ -113,6 +110,7 @@ export default function EditorPage() {
 
     editTimeoutRef.current = setTimeout(() => {
       isUserEditingRef.current = false
+      console.log('Edit timeout cleared, polling resumed')
     }, 1500)
   }
 
