@@ -25,7 +25,9 @@ export default function EditorPage() {
   const saveTimeoutRef = useRef(null)
   const [userRole, setUserRole] = useState('read')
   const [document, setDocument] = useState(null)
+  const [editorKey, setEditorKey] = useState(0)
   const convex = useConvex()
+  const lastSavedContentRef = useRef(null)
 
   useEffect(() => {
     const id = localStorage.getItem('userId')
@@ -36,12 +38,19 @@ export default function EditorPage() {
     }
   }, [router])
 
-  // Aggressive real-time polling - always fetch fresh
+  // Real-time polling - always get fresh data
   const fetchDocument = useCallback(async () => {
     if (!documentId) return
     try {
       const doc = await convex.query(api.documents.getDocument, { documentId })
-      setDocument(doc)
+      if (doc) {
+        const currentContent = JSON.stringify(doc.content)
+        if (currentContent !== lastSavedContentRef.current) {
+          lastSavedContentRef.current = currentContent
+          setDocument(doc)
+          setEditorKey(prev => prev + 1)
+        }
+      }
     } catch (err) {
       console.error('Fetch error:', err)
     }
@@ -136,10 +145,12 @@ export default function EditorPage() {
             title,
           })
         }
+
+        lastSavedContentRef.current = JSON.stringify(content)
       } catch (err) {
         console.error('Error saving:', err)
       }
-    }, 200)
+    }, 500)
   }
 
   const handleShare = async (e) => {
@@ -242,8 +253,8 @@ export default function EditorPage() {
               <div className="flex items-center space-x-3 ml-4">
                 {isOwnerOrAdmin && (
                   <>
-                    <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-cyan-700 hover:to-blue-700 transition-all">🔗 Link</button>
-                    <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all neon-glow">👥 Share</button>
+                    <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-sm font-medium rounded-lg">🔗 Link</button>
+                    <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg neon-glow">👥 Share</button>
                   </>
                 )}
                 <span className="text-xs px-3 py-1 bg-white/10 rounded text-gray-300">
@@ -256,10 +267,9 @@ export default function EditorPage() {
 
         <div className="max-w-4xl mx-auto px-6 py-8">
           {userRole === 'read' && <div className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 mb-4">📖 Read-only access</div>}
-          <BlockNoteEditor key={`${documentId}-${userRole}`} initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
+          <BlockNoteEditor key={editorKey} initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
         </div>
 
-        {/* Link Sharing Modal */}
         {showLinkModal && isOwnerOrAdmin && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
             <div className="glass-strong rounded-2xl p-8 max-w-2xl w-full border border-white/10">
@@ -273,49 +283,43 @@ export default function EditorPage() {
                     <option value="admin">🔑 Admin</option>
                   </select>
                 </div>
-                <button onClick={generateShareLink} className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-700 hover:to-blue-700">Generate Link</button>
+                <button onClick={generateShareLink} className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg">Generate Link</button>
                 {shareLink && (
                   <div>
                     <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-white text-sm break-all">{shareLink}</div>
-                    <button onClick={copyToClipboard} className="w-full mt-3 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-pink-700">📋 Copy Link</button>
+                    <button onClick={copyToClipboard} className="w-full mt-3 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg">📋 Copy Link</button>
                   </div>
                 )}
                 {sharingSuccess && <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">{sharingSuccess}</div>}
-                <button onClick={() => setShowLinkModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20">Close</button>
+                <button onClick={() => setShowLinkModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Email Sharing Modal */}
         {showShareModal && isOwnerOrAdmin && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
             <div className="glass-strong rounded-2xl p-8 max-w-2xl w-full border border-white/10">
               <h2 className="text-2xl font-bold mb-6 gradient-text">Share Document</h2>
-
               <form onSubmit={handleShare} className="mb-8 pb-8 border-b border-white/10">
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
-                    <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" placeholder="user@example.com" />
+                    <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="user@example.com" />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">Permission</label>
                     <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white">
                       <option value="read">👁️ Read only</option>
                       <option value="edit">✏️ Can edit</option>
-                      <option value="admin">🔑 Admin access</option>
+                      <option value="admin">🔑 Admin</option>
                     </select>
                   </div>
-
                   {sharingError && <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">{sharingError}</div>}
                   {sharingSuccess && <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">{sharingSuccess}</div>}
-
-                  <button type="submit" className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-pink-700">Share Document</button>
+                  <button type="submit" className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg">Share Document</button>
                 </div>
               </form>
-
               {permissions && permissions.length > 0 && (
                 <div>
                   <h3 className="text-lg font-semibold mb-4 text-white">Shared with ({permissions.length})</h3>
@@ -324,16 +328,15 @@ export default function EditorPage() {
                       <div key={perm._id} className="flex items-center justify-between p-4 glass rounded-lg border border-white/10">
                         <div>
                           <p className="font-medium text-white">{perm.user?.email}</p>
-                          <p className="text-sm text-gray-400">{perm.role === 'read' && '👁️ Read only'}{perm.role === 'edit' && '✏️ Can edit'}{perm.role === 'admin' && '🔑 Admin access'}</p>
+                          <p className="text-sm text-gray-400">{perm.role === 'read' && '👁️ Read only'}{perm.role === 'edit' && '✏️ Can edit'}{perm.role === 'admin' && '🔑 Admin'}</p>
                         </div>
-                        <button onClick={() => handleRemoveAccess(perm._id)} className="px-3 py-1 text-sm bg-red-500/20 text-red-400 rounded hover:bg-red-500/30">Remove</button>
+                        <button onClick={() => handleRemoveAccess(perm._id)} className="px-3 py-1 text-sm bg-red-500/20 text-red-400 rounded">Remove</button>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-
-              <button onClick={() => setShowShareModal(false)} className="mt-8 w-full px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20">Close</button>
+              <button onClick={() => setShowShareModal(false)} className="mt-8 w-full px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
             </div>
           </div>
         )}
