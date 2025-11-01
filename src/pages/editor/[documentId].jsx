@@ -194,7 +194,7 @@ export default function EditorPage() {
         </nav>
 
         <div className="max-w-4xl mx-auto px-6 py-8">
-          <BlockNoteEditor initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
+          <BlockNoteEditor key={JSON.stringify(initialContent)} initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
         </div>
 
         {showLinkModal && isOwnerOrAdmin && (
