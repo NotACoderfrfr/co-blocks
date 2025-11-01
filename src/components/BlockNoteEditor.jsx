@@ -4,12 +4,14 @@ import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
 
-export default function BlockNoteEditor({ initialContent, onChange }) {
+export default function BlockNoteEditor({ initialContent, onChange, userRole }) {
   const [mounted, setMounted] = useState(false)
   const [activeStyles, setActiveStyles] = useState({})
   const [contextMenu, setContextMenu] = useState(null)
   const [showImageModal, setShowImageModal] = useState(false)
   const fileInputRef = useRef(null)
+  const editorRef = useRef(null)
+  const lastContentRef = useRef(null)
 
   useEffect(() => {
     setMounted(true)
@@ -23,6 +25,25 @@ export default function BlockNoteEditor({ initialContent, onChange }) {
       },
     ],
   })
+
+  editorRef.current = editor
+
+  // Update editor content when it changes from real-time polling
+  useEffect(() => {
+    if (!editor || !initialContent) return
+    
+    const contentStr = JSON.stringify(initialContent)
+    if (contentStr === lastContentRef.current) return
+    
+    lastContentRef.current = contentStr
+    
+    // Only update if different
+    try {
+      editor.replaceBlocks(editor.document, initialContent)
+    } catch (e) {
+      console.error('Error updating content:', e)
+    }
+  }, [initialContent, editor])
 
   // Update active styles when selection changes
   useEffect(() => {
@@ -210,6 +231,8 @@ export default function BlockNoteEditor({ initialContent, onChange }) {
     )
   }
 
+  const isReadOnly = userRole === 'read'
+
   return (
     <>
       <style jsx global>{`
@@ -224,6 +247,11 @@ export default function BlockNoteEditor({ initialContent, onChange }) {
           padding: 24px !important;
           color: white !important;
           min-height: 500px;
+        }
+        
+        .bn-editor.read-only {
+          opacity: 0.8 !important;
+          pointer-events: none !important;
         }
         
         .bn-block-content {
@@ -354,130 +382,157 @@ export default function BlockNoteEditor({ initialContent, onChange }) {
           box-shadow: 0 0 15px rgba(124, 58, 237, 0.4) !important;
           color: white !important;
         }
+        
+        .toolbar-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       `}</style>
 
       <div className="space-y-4">
         {/* Custom Toolbar */}
-        <div className="glass rounded-lg p-3 border border-white/10" style={{background: 'rgba(255, 255, 255, 0.03)', backdropFilter: 'blur(10px)'}}>
-          <div className="flex flex-wrap gap-2">
-            {/* Text Formatting */}
-            <div className="flex gap-1 border-r border-white/10 pr-2">
-              <button
-                onClick={() => toggleStyle('bold')}
-                className={`toolbar-btn ${activeStyles.bold ? 'active' : ''}`}
-                title="Bold (Ctrl+B)"
-              >
-                <strong>B</strong>
-              </button>
-              <button
-                onClick={() => toggleStyle('italic')}
-                className={`toolbar-btn ${activeStyles.italic ? 'active' : ''}`}
-                title="Italic (Ctrl+I)"
-              >
-                <em>I</em>
-              </button>
-              <button
-                onClick={() => toggleStyle('underline')}
-                className={`toolbar-btn ${activeStyles.underline ? 'active' : ''}`}
-                title="Underline (Ctrl+U)"
-              >
-                <u>U</u>
-              </button>
-              <button
-                onClick={() => toggleStyle('strike')}
-                className={`toolbar-btn ${activeStyles.strike ? 'active' : ''}`}
-                title="Strikethrough"
-              >
-                <s>S</s>
-              </button>
-              <button
-                onClick={() => toggleStyle('code')}
-                className={`toolbar-btn ${activeStyles.code ? 'active' : ''}`}
-                title="Inline Code"
-              >
-                {'</>'}
-              </button>
-            </div>
+        {!isReadOnly && (
+          <div className="glass rounded-lg p-3 border border-white/10" style={{background: 'rgba(255, 255, 255, 0.03)', backdropFilter: 'blur(10px)'}}>
+            <div className="flex flex-wrap gap-2">
+              {/* Text Formatting */}
+              <div className="flex gap-1 border-r border-white/10 pr-2">
+                <button
+                  onClick={() => toggleStyle('bold')}
+                  className={`toolbar-btn ${activeStyles.bold ? 'active' : ''}`}
+                  title="Bold (Ctrl+B)"
+                  disabled={isReadOnly}
+                >
+                  <strong>B</strong>
+                </button>
+                <button
+                  onClick={() => toggleStyle('italic')}
+                  className={`toolbar-btn ${activeStyles.italic ? 'active' : ''}`}
+                  title="Italic (Ctrl+I)"
+                  disabled={isReadOnly}
+                >
+                  <em>I</em>
+                </button>
+                <button
+                  onClick={() => toggleStyle('underline')}
+                  className={`toolbar-btn ${activeStyles.underline ? 'active' : ''}`}
+                  title="Underline (Ctrl+U)"
+                  disabled={isReadOnly}
+                >
+                  <u>U</u>
+                </button>
+                <button
+                  onClick={() => toggleStyle('strike')}
+                  className={`toolbar-btn ${activeStyles.strike ? 'active' : ''}`}
+                  title="Strikethrough"
+                  disabled={isReadOnly}
+                >
+                  <s>S</s>
+                </button>
+                <button
+                  onClick={() => toggleStyle('code')}
+                  className={`toolbar-btn ${activeStyles.code ? 'active' : ''}`}
+                  title="Inline Code"
+                  disabled={isReadOnly}
+                >
+                  {'</>'}
+                </button>
+              </div>
 
-            {/* Headings */}
-            <div className="flex gap-1 border-r border-white/10 pr-2">
-              <button
-                onClick={() => setHeading(1)}
-                className="toolbar-btn"
-                title="Heading 1"
-              >
-                H1
-              </button>
-              <button
-                onClick={() => setHeading(2)}
-                className="toolbar-btn"
-                title="Heading 2"
-              >
-                H2
-              </button>
-              <button
-                onClick={() => setHeading(3)}
-                className="toolbar-btn"
-                title="Heading 3"
-              >
-                H3
-              </button>
-            </div>
+              {/* Headings */}
+              <div className="flex gap-1 border-r border-white/10 pr-2">
+                <button
+                  onClick={() => setHeading(1)}
+                  className="toolbar-btn"
+                  title="Heading 1"
+                  disabled={isReadOnly}
+                >
+                  H1
+                </button>
+                <button
+                  onClick={() => setHeading(2)}
+                  className="toolbar-btn"
+                  title="Heading 2"
+                  disabled={isReadOnly}
+                >
+                  H2
+                </button>
+                <button
+                  onClick={() => setHeading(3)}
+                  className="toolbar-btn"
+                  title="Heading 3"
+                  disabled={isReadOnly}
+                >
+                  H3
+                </button>
+              </div>
 
-            {/* Lists */}
-            <div className="flex gap-1 border-r border-white/10 pr-2">
-              <button
-                onClick={() => insertBlock('bulletListItem')}
-                className="toolbar-btn"
-                title="Bullet List"
-              >
-                • List
-              </button>
-              <button
-                onClick={() => insertBlock('numberedListItem')}
-                className="toolbar-btn"
-                title="Numbered List"
-              >
-                1. List
-              </button>
-              <button
-                onClick={() => insertBlock('checkListItem')}
-                className="toolbar-btn"
-                title="Todo List"
-              >
-                ☑ Todo
-              </button>
-            </div>
+              {/* Lists */}
+              <div className="flex gap-1 border-r border-white/10 pr-2">
+                <button
+                  onClick={() => insertBlock('bulletListItem')}
+                  className="toolbar-btn"
+                  title="Bullet List"
+                  disabled={isReadOnly}
+                >
+                  • List
+                </button>
+                <button
+                  onClick={() => insertBlock('numberedListItem')}
+                  className="toolbar-btn"
+                  title="Numbered List"
+                  disabled={isReadOnly}
+                >
+                  1. List
+                </button>
+                <button
+                  onClick={() => insertBlock('checkListItem')}
+                  className="toolbar-btn"
+                  title="Todo List"
+                  disabled={isReadOnly}
+                >
+                  ☑ Todo
+                </button>
+              </div>
 
-            {/* Blocks */}
-            <div className="flex gap-1">
-              <button
-                onClick={() => insertBlock('codeBlock')}
-                className="toolbar-btn"
-                title="Code Block"
-              >
-                {'{ } Code'}
-              </button>
-              <button
-                onClick={() => insertBlock('table')}
-                className="toolbar-btn"
-                title="Table"
-              >
-                ▦ Table
-              </button>
-              <button
-                onClick={() => insertBlock('image')}
-                className="toolbar-btn"
-                title="Image"
-              >
-                🖼 Image
-              </button>
+              {/* Blocks */}
+              <div className="flex gap-1">
+                <button
+                  onClick={() => insertBlock('codeBlock')}
+                  className="toolbar-btn"
+                  title="Code Block"
+                  disabled={isReadOnly}
+                >
+                  {'{ } Code'}
+                </button>
+                <button
+                  onClick={() => insertBlock('table')}
+                  className="toolbar-btn"
+                  title="Table"
+                  disabled={isReadOnly}
+                >
+                  ▦ Table
+                </button>
+                <button
+                  onClick={() => insertBlock('image')}
+                  className="toolbar-btn"
+                  title="Image"
+                  disabled={isReadOnly}
+                >
+                  🖼 Image
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {isReadOnly && (
+          <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm">
+            📖 You have read-only access to this document
+          </div>
+        )}
 
         {/* Editor */}
-        <div onContextMenu={handleContextMenu}>
+        <div onContextMenu={handleContextMenu} className={isReadOnly ? 'read-only' : ''}>
           <BlockNoteView editor={editor} theme="dark" />
         </div>
 
@@ -522,7 +577,7 @@ export default function BlockNoteEditor({ initialContent, onChange }) {
         )}
 
         {/* Context Menu */}
-        {contextMenu && (
+        {contextMenu && !isReadOnly && (
           <div
             style={{
               position: 'fixed',

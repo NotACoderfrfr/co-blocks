@@ -297,6 +297,7 @@ export default function EditorPage() {
 
         <div className="max-w-4xl mx-auto px-6 py-8">
           <BlockNoteEditor
+            userRole={userRole}
             initialContent={JSON.parse(document.content)}
             onChange={(content) => userRole !== 'read' && handleSave(content, document.title)}
           />
