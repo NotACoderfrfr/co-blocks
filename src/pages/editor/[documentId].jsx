@@ -14,6 +14,57 @@ export default function EditorPage() {
   const router = useRouter()
   const { documentId } = router.query
   const [userId, setUserId] = useState(null)
+  const [document, setDocument] = useState(null)
+  const convex = useConvex()
+  const lastFetchRef = useRef(null)
+  const fetchCountRef = useRef(0)
+
+  useEffect(() => {
+    const id = localStorage.getItem('userId')
+    if (!id) router.push('/auth')
+    else setUserId(id)
+  }, [router])
+
+  const fetchDocument = useCallback(async () => {
+    if (!documentId) return
+    try {
+      const doc = await convex.query(api.documents.getDocument, { documentId })
+      if (doc) {
+        const contentStr = JSON.stringify(doc.content)
+        fetchCountRef.current++
+        
+        if (contentStr !== lastFetchRef.current) {
+          console.log(`Fetch #${fetchCountRef.current}: Content changed!`)
+          lastFetchRef.current = contentStr
+          setDocument(doc)
+        } else {
+          console.log(`Fetch #${fetchCountRef.current}: No change`)
+        }
+      }
+    } catch (err) {
+      console.error('Fetch error:', err)
+    }
+  }, [documentId, convex])
+
+  useEffect(() => {
+    if (!documentId) return
+    
+    fetchDocument()
+    const interval = setInterval(fetchDocument, 300)
+    
+    return () => clearInterval(interval)
+  }, [documentId, fetchDocument])
+
+  const permissions = useQuery(api.sharing.getDocumentPermissions, documentId ? { documentId } : 'skip')
+  const activeUsers = useQuery(api.presence.getActiveUsers, documentId ? { documentId } : 'skip')
+  const updateDocument = useMutation(api.documents.updateDocument)
+  const saveContent = useMutation(api.realtime.saveContent)
+  const shareDocument = useMutation(api.sharing.shareDocument)
+  const removePermission = useMutation(api.sharing.removePermission)
+  const updatePresence = useMutation(api.presence.updatePresence)
+  const removePresence = useMutation(api.presence.removePresence)
+
+  const [userRole, setUserRole] = useState('read')
   const [showShareModal, setShowShareModal] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
@@ -23,69 +74,9 @@ export default function EditorPage() {
   const [linkRole, setLinkRole] = useState('edit')
   const [shareLink, setShareLink] = useState('')
   const saveTimeoutRef = useRef(null)
-  const [userRole, setUserRole] = useState('read')
-  const [document, setDocument] = useState(null)
-  const convex = useConvex()
-  const lastFetchRef = useRef(null)
-
-  useEffect(() => {
-    const id = localStorage.getItem('userId')
-    if (!id) {
-      router.push('/auth')
-    } else {
-      setUserId(id)
-    }
-  }, [router])
-
-  // Real-time polling
-  const fetchDocument = useCallback(async () => {
-    if (!documentId) return
-    try {
-      const doc = await convex.query(api.documents.getDocument, { documentId })
-      if (doc) {
-        const contentStr = JSON.stringify(doc.content)
-        if (contentStr !== lastFetchRef.current) {
-          lastFetchRef.current = contentStr
-          setDocument(doc)
-        }
-      }
-    } catch (err) {
-      console.error('Fetch error:', err)
-    }
-  }, [documentId, convex])
-
-  useEffect(() => {
-    if (!documentId) {
-      setDocument(null)
-      return
-    }
-
-    fetchDocument()
-    const interval = setInterval(fetchDocument, 100)
-    
-    return () => clearInterval(interval)
-  }, [documentId, fetchDocument])
-
-  const permissions = useQuery(
-    api.sharing.getDocumentPermissions,
-    documentId ? { documentId } : 'skip'
-  )
-
-  const activeUsers = useQuery(
-    api.presence.getActiveUsers,
-    documentId ? { documentId } : 'skip'
-  )
-
-  const updateDocument = useMutation(api.documents.updateDocument)
-  const saveContent = useMutation(api.realtime.saveContent)
-  const shareDocument = useMutation(api.sharing.shareDocument)
-  const removePermission = useMutation(api.sharing.removePermission)
-  const updatePresence = useMutation(api.presence.updatePresence)
-  const removePresence = useMutation(api.presence.removePresence)
 
   useEffect(() => {
     if (!document || !userId) return
-    
     if (document.ownerId === userId) {
       setUserRole('admin')
     } else if (permissions && permissions.length > 0) {
@@ -96,14 +87,11 @@ export default function EditorPage() {
 
   useEffect(() => {
     if (!userId || !documentId) return
-
     const updatePres = async () => {
       await updatePresence({ documentId, userId })
     }
-
     updatePres()
     const interval = setInterval(updatePres, 30000)
-
     return () => {
       clearInterval(interval)
       removePresence({ documentId, userId }).catch(console.error)
@@ -116,32 +104,18 @@ export default function EditorPage() {
         await removePresence({ documentId, userId }).catch(console.error)
       }
     }
-
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [userId, documentId, removePresence])
 
   const handleSave = async (content, title) => {
     if (!documentId || !userId || userRole === 'read') return
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
-
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        await saveContent({
-          documentId,
-          content: JSON.stringify(content),
-          userId,
-        })
-
+        await saveContent({ documentId, content: JSON.stringify(content), userId })
         if (title) {
-          await updateDocument({
-            documentId,
-            content: JSON.stringify(content),
-            title,
-          })
+          await updateDocument({ documentId, content: JSON.stringify(content), title })
         }
       } catch (err) {
         console.error('Error saving:', err)
@@ -153,20 +127,13 @@ export default function EditorPage() {
     e.preventDefault()
     setSharingError('')
     setSharingSuccess('')
-
     if (!shareEmail.trim()) {
       setSharingError('Please enter an email')
       return
     }
-
     try {
-      await shareDocument({
-        documentId,
-        userEmail: shareEmail,
-        role: shareRole,
-        sharedBy: userId,
-      })
-      setSharingSuccess(`Document shared with ${shareEmail}!`)
+      await shareDocument({ documentId, userEmail: shareEmail, role: shareRole, sharedBy: userId })
+      setSharingSuccess(`Shared with ${shareEmail}!`)
       setShareEmail('')
       setTimeout(() => setSharingSuccess(''), 3000)
     } catch (err) {
@@ -176,23 +143,18 @@ export default function EditorPage() {
 
   const generateShareLink = () => {
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-    const link = `${baseUrl}/document/${documentId}?role=${linkRole}`
-    setShareLink(link)
+    setShareLink(`${baseUrl}/document/${documentId}?role=${linkRole}`)
   }
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(shareLink)
-    setSharingSuccess('Link copied!')
+    setSharingSuccess('Copied!')
     setTimeout(() => setSharingSuccess(''), 2000)
   }
 
   const handleRemoveAccess = async (permissionId) => {
     try {
-      await removePermission({ 
-        permissionId,
-        userId,
-        documentId,
-      })
+      await removePermission({ permissionId, userId, documentId })
     } catch (err) {
       setSharingError(err.message)
     }
@@ -205,7 +167,7 @@ export default function EditorPage() {
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mb-4"></div>
-          <p className="text-gray-400">Loading document...</p>
+          <p className="text-gray-400">Loading...</p>
         </div>
       </div>
     )
@@ -214,111 +176,84 @@ export default function EditorPage() {
   return (
     <>
       <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Space Grotesk', sans-serif; background: #0a0a0a; }
         .gradient-text { background: linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #06b6d4 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        .glass-strong { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .neon-glow { box-shadow: 0 0 20px rgba(124, 58, 237, 0.5), 0 0 40px rgba(124, 58, 237, 0.3); }
+        .neon-glow { box-shadow: 0 0 20px rgba(124, 58, 237, 0.5); }
       `}</style>
 
       <UserInfo />
       <div className="min-h-screen bg-black text-white">
         <nav className="glass border-b border-white/10 sticky top-0 z-40">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4 flex-1">
-                <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-white">← Back</button>
-                <input type="text" defaultValue={document.title} onBlur={(e) => handleSave(JSON.parse(document.content), e.target.value)} className="text-xl font-semibold bg-transparent border-none outline-none text-white" placeholder="Untitled Document" disabled={userRole === 'read'} />
-              </div>
-
-              {activeUsers && activeUsers.length > 0 && (
-                <div className="flex items-center space-x-2 px-4 py-2 glass rounded-lg border border-white/10">
-                  <div className="flex -space-x-2">
-                    {activeUsers.slice(0, 3).map((user, idx) => (
-                      <div key={`${user.userId}-${idx}`} className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center text-white text-xs font-bold border-2 border-black">
-                        {user.name?.[0] || user.email?.[0]}
-                      </div>
-                    ))}
-                    {activeUsers.length > 3 && <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white text-xs font-bold border-2 border-black">+{activeUsers.length - 3}</div>}
-                  </div>
-                  <span className="text-xs text-gray-400">{activeUsers.length} viewing</span>
-                </div>
+          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-4 flex-1">
+              <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-white">← Back</button>
+              <input type="text" defaultValue={document.title} onBlur={(e) => handleSave(JSON.parse(document.content), e.target.value)} className="text-xl font-semibold bg-transparent border-none outline-none text-white" placeholder="Untitled" disabled={userRole === 'read'} />
+            </div>
+            <div className="flex gap-3">
+              {isOwnerOrAdmin && (
+                <>
+                  <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg">Link</button>
+                  <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg">Share</button>
+                </>
               )}
-
-              <div className="flex items-center space-x-3 ml-4">
-                {isOwnerOrAdmin && (
-                  <>
-                    <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-sm font-medium rounded-lg">Link</button>
-                    <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg neon-glow">Share</button>
-                  </>
-                )}
-                <span className="text-xs px-3 py-1 bg-white/10 rounded">{userRole === 'admin' ? 'Admin' : userRole === 'edit' ? 'Editor' : 'Viewer'}</span>
-              </div>
+              <span className="text-xs px-3 py-1 bg-white/10 rounded">{userRole}</span>
             </div>
           </div>
         </nav>
 
         <div className="max-w-4xl mx-auto px-6 py-8">
-          {userRole === 'read' && <div className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 mb-4">Read-only access</div>}
           <BlockNoteEditor initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
         </div>
 
         {showLinkModal && isOwnerOrAdmin && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
-            <div className="glass-strong rounded-2xl p-8 max-w-2xl w-full border border-white/10">
+            <div className="glass rounded-2xl p-8 max-w-2xl w-full">
               <h2 className="text-2xl font-bold mb-6 gradient-text">Share Link</h2>
-              <div className="space-y-4">
-                <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white">
-                  <option value="read">View only</option>
-                  <option value="edit">Can edit</option>
-                  <option value="admin">Admin</option>
-                </select>
-                <button onClick={generateShareLink} className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg">Generate</button>
-                {shareLink && (
-                  <div>
-                    <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-white text-sm break-all">{shareLink}</div>
-                    <button onClick={copyToClipboard} className="w-full mt-3 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white">Copy</button>
-                  </div>
-                )}
-                {sharingSuccess && <div className="p-3 bg-green-500/10 text-green-400">{sharingSuccess}</div>}
-                <button onClick={() => setShowLinkModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
-              </div>
+              <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white mb-4">
+                <option value="read">View</option>
+                <option value="edit">Edit</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button onClick={generateShareLink} className="w-full px-6 py-3 bg-cyan-600 text-white mb-4">Generate</button>
+              {shareLink && (
+                <>
+                  <div className="p-3 bg-white/5 border border-white/10 rounded mb-3 text-sm break-all">{shareLink}</div>
+                  <button onClick={copyToClipboard} className="w-full px-6 py-3 bg-purple-600 text-white mb-4">Copy</button>
+                </>
+              )}
+              {sharingSuccess && <div className="p-3 bg-green-500/10 text-green-400 mb-4">{sharingSuccess}</div>}
+              <button onClick={() => setShowLinkModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
             </div>
           </div>
         )}
 
         {showShareModal && isOwnerOrAdmin && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
-            <div className="glass-strong rounded-2xl p-8 max-w-2xl w-full border border-white/10">
+            <div className="glass rounded-2xl p-8 max-w-2xl w-full">
               <h2 className="text-2xl font-bold mb-6 gradient-text">Share</h2>
-              <form onSubmit={handleShare} className="mb-8 pb-8 border-b border-white/10">
-                <div className="space-y-4">
-                  <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="user@example.com" />
-                  <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white">
-                    <option value="read">Read only</option>
-                    <option value="edit">Edit</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  {sharingError && <div className="p-3 bg-red-500/10 text-red-400">{sharingError}</div>}
-                  {sharingSuccess && <div className="p-3 bg-green-500/10 text-green-400">{sharingSuccess}</div>}
-                  <button type="submit" className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg">Share</button>
-                </div>
+              <form onSubmit={handleShare}>
+                <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white mb-4" placeholder="user@example.com" />
+                <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white mb-4">
+                  <option value="read">Read</option>
+                  <option value="edit">Edit</option>
+                  <option value="admin">Admin</option>
+                </select>
+                {sharingError && <div className="p-3 bg-red-500/10 text-red-400 mb-4">{sharingError}</div>}
+                {sharingSuccess && <div className="p-3 bg-green-500/10 text-green-400 mb-4">{sharingSuccess}</div>}
+                <button type="submit" className="w-full px-6 py-3 bg-purple-600 text-white mb-4">Share</button>
               </form>
               {permissions && permissions.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">Shared ({permissions.length})</h3>
-                  <div className="space-y-3">
-                    {permissions.map((perm) => (
-                      <div key={perm._id} className="flex items-center justify-between p-4 glass rounded-lg">
-                        <p className="font-medium">{perm.user?.email}</p>
-                        <button onClick={() => handleRemoveAccess(perm._id)} className="px-3 py-1 text-sm bg-red-500/20 text-red-400 rounded">Remove</button>
-                      </div>
-                    ))}
-                  </div>
+                <div className="border-t border-white/10 pt-4">
+                  {permissions.map((perm) => (
+                    <div key={perm._id} className="flex justify-between items-center p-3 glass rounded mb-2">
+                      <p>{perm.user?.email}</p>
+                      <button onClick={() => handleRemoveAccess(perm._id)} className="text-sm bg-red-500/20 text-red-400 px-3 py-1 rounded">Remove</button>
+                    </div>
+                  ))}
                 </div>
               )}
-              <button onClick={() => setShowShareModal(false)} className="mt-8 w-full px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
+              <button onClick={() => setShowShareModal(false)} className="w-full mt-4 px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
             </div>
           </div>
         )}

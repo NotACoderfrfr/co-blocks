@@ -3,6 +3,8 @@ import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
+import { getDefaultHTMLConverter } from '@blocknote/html'
+import { createHighlighter } from 'shiki'
 
 export default function BlockNoteEditor({ initialContent, onChange, userRole, isEditable = true }) {
   const [mounted, setMounted] = useState(false)
@@ -20,16 +22,15 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
 
   const editor = useCreateBlockNote({
     initialContent: initialContent || [{ type: 'paragraph', content: 'Start writing...' }],
+    uploadFile: async (file) => file,
   })
 
   editorRef.current = editor
 
-  // Update content ONLY when not editing and content is different
   useEffect(() => {
     if (!editor || !initialContent || isReadOnly || isEditingRef.current) return
     
     const newContent = JSON.stringify(initialContent)
-    
     if (newContent === lastContentRef.current) return
     
     lastContentRef.current = newContent
@@ -37,11 +38,10 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
     try {
       editor.replaceBlocks(editor.document, initialContent)
     } catch (e) {
-      console.error('Error:', e)
+      console.error('Update error:', e)
     }
   }, [initialContent, editor, isReadOnly])
 
-  // Track editing
   useEffect(() => {
     if (!editor || isReadOnly) return
 
@@ -72,16 +72,20 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
   const setHeading = (level) => {
     if (!editor || isReadOnly) return
     const currentBlock = editor.getTextCursorPosition().block
-    editor.updateBlock(currentBlock, { type: 'heading', props: { level } })
+    if (currentBlock) {
+      editor.updateBlock(currentBlock, { type: 'heading', props: { level } })
+    }
   }
 
   const insertBlock = (type) => {
     if (!editor || isReadOnly) return
     const currentBlock = editor.getTextCursorPosition().block
-    if (type === 'codeBlock') {
-      editor.insertBlocks([{ type: 'codeBlock', props: { language: 'javascript' }, content: [] }], currentBlock, 'after')
-    } else {
-      editor.insertBlocks([{ type }], currentBlock, 'after')
+    if (currentBlock) {
+      if (type === 'codeBlock') {
+        editor.insertBlocks([{ type: 'codeBlock', props: { language: 'javascript' }, content: [] }], currentBlock, 'after')
+      } else {
+        editor.insertBlocks([{ type }], currentBlock, 'after')
+      }
     }
   }
 
@@ -97,7 +101,9 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
         .bn-editor.read-only { pointer-events: none !important; opacity: 0.7 !important; user-select: text !important; }
         .ProseMirror { color: white !important; }
         .ProseMirror p { color: rgba(255, 255, 255, 0.9) !important; }
+        .ProseMirror h1, .ProseMirror h2, .ProseMirror h3 { color: rgba(255, 255, 255, 1) !important; }
         .toolbar-btn { padding: 8px 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer; }
+        .toolbar-btn:hover { background: rgba(124, 58, 237, 0.2); }
       `}</style>
 
       <div className="space-y-4">
