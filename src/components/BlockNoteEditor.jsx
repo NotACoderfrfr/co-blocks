@@ -3,8 +3,6 @@ import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
-import { getDefaultHTMLConverter } from '@blocknote/html'
-import { createHighlighter } from 'shiki'
 
 export default function BlockNoteEditor({ initialContent, onChange, userRole, isEditable = true }) {
   const [mounted, setMounted] = useState(false)
@@ -22,7 +20,6 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
 
   const editor = useCreateBlockNote({
     initialContent: initialContent || [{ type: 'paragraph', content: 'Start writing...' }],
-    uploadFile: async (file) => file,
   })
 
   editorRef.current = editor
