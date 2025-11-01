@@ -8,9 +8,8 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
   const [mounted, setMounted] = useState(false)
   const fileInputRef = useRef(null)
   const editorRef = useRef(null)
-  const lastContentRef = useRef(JSON.stringify(initialContent))
-  const editorContainerRef = useRef(null)
-  const hasUserEditRef = useRef(false)
+  const lastUpdateRef = useRef(null)
+  const isEditingRef = useRef(false)
   const editTimeoutRef = useRef(null)
 
   useEffect(() => {
@@ -25,36 +24,37 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
 
   editorRef.current = editor
 
-  // Watch for external content changes - update if different and not editing
+  // Aggressive real-time - try to update ALWAYS unless editing
   useEffect(() => {
-    if (!editor || !initialContent || isReadOnly) return
+    if (!editor || !initialContent || isReadOnly || isEditingRef.current) return
     
-    const newContent = JSON.stringify(initialContent)
+    const contentStr = JSON.stringify(initialContent)
     
-    if (newContent === lastContentRef.current || hasUserEditRef.current) return
+    // Only update if content is actually different
+    if (contentStr === lastUpdateRef.current) return
     
-    lastContentRef.current = newContent
+    lastUpdateRef.current = contentStr
 
     try {
       editor.replaceBlocks(editor.document, initialContent)
     } catch (e) {
-      console.error('Error updating:', e)
+      console.error('Update error:', e)
     }
   }, [initialContent, editor, isReadOnly])
 
-  // Track user edits
+  // Track editing
   useEffect(() => {
     if (!editor || isReadOnly) return
 
     const handleChange = () => {
-      hasUserEditRef.current = true
-      lastContentRef.current = JSON.stringify(editor.document)
+      isEditingRef.current = true
       onChange(editor.document)
       
       if (editTimeoutRef.current) clearTimeout(editTimeoutRef.current)
       editTimeoutRef.current = setTimeout(() => {
-        hasUserEditRef.current = false
-      }, 1000)
+        isEditingRef.current = false
+        lastUpdateRef.current = null
+      }, 500)
     }
 
     editor.onChange(handleChange)
@@ -85,38 +85,6 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
     }
   }
 
-  const insertImageFromUrl = () => {
-    if (isReadOnly) return
-    const url = prompt('Enter image URL:')
-    if (url) {
-      const currentBlock = editor.getTextCursorPosition().block
-      editor.insertBlocks([{ type: 'image', props: { url } }], currentBlock, 'after')
-    }
-  }
-
-  const insertImageFromFile = () => {
-    if (isReadOnly) return
-    fileInputRef.current?.click()
-  }
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const currentBlock = editor.getTextCursorPosition().block
-        editor.insertBlocks([{ type: 'image', props: { url: event.target.result } }], currentBlock, 'after')
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const deleteBlock = () => {
-    if (!editor || isReadOnly) return
-    const currentBlock = editor.getTextCursorPosition().block
-    editor.removeBlocks([currentBlock])
-  }
-
   if (!mounted) {
     return <div className="text-center py-12"><div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500"></div></div>
   }
@@ -129,12 +97,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
         .bn-editor.read-only { pointer-events: none !important; opacity: 0.7 !important; user-select: text !important; }
         .ProseMirror { color: white !important; }
         .ProseMirror p { color: rgba(255, 255, 255, 0.9) !important; }
-        .ProseMirror h1 { color: rgba(255, 255, 255, 1) !important; font-size: 2em !important; }
-        .ProseMirror h2 { color: rgba(255, 255, 255, 1) !important; font-size: 1.5em !important; }
-        .ProseMirror h3 { color: rgba(255, 255, 255, 1) !important; font-size: 1.2em !important; }
-        .toolbar-btn { padding: 8px 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: rgba(255, 255, 255, 0.9); cursor: pointer; transition: all 0.2s; }
-        .toolbar-btn:hover:not(:disabled) { background: rgba(124, 58, 237, 0.2); }
-        .toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .toolbar-btn { padding: 8px 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer; }
       `}</style>
 
       <div className="space-y-4">
@@ -146,7 +109,6 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
                 <button onClick={() => toggleStyle('italic')} className="toolbar-btn"><em>I</em></button>
                 <button onClick={() => toggleStyle('underline')} className="toolbar-btn"><u>U</u></button>
                 <button onClick={() => toggleStyle('strike')} className="toolbar-btn"><s>S</s></button>
-                <button onClick={() => toggleStyle('code')} className="toolbar-btn">{'</>'}</button>
               </div>
               <div className="flex gap-1 border-r border-white/10 pr-2">
                 <button onClick={() => setHeading(1)} className="toolbar-btn">H1</button>
@@ -156,28 +118,22 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
               <div className="flex gap-1 border-r border-white/10 pr-2">
                 <button onClick={() => insertBlock('bulletListItem')} className="toolbar-btn">• List</button>
                 <button onClick={() => insertBlock('numberedListItem')} className="toolbar-btn">1. List</button>
-                <button onClick={() => insertBlock('checkListItem')} className="toolbar-btn">☑ Todo</button>
               </div>
               <div className="flex gap-1">
                 <button onClick={() => insertBlock('codeBlock')} className="toolbar-btn">Code</button>
                 <button onClick={() => insertBlock('table')} className="toolbar-btn">Table</button>
-                <button onClick={() => insertImageFromUrl()} className="toolbar-btn">Image</button>
               </div>
             </div>
           </div>
         )}
 
-        {isReadOnly && (
-          <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm">
-            📖 Read-only access
-          </div>
-        )}
+        {isReadOnly && <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm">📖 Read-only</div>}
 
-        <div ref={editorContainerRef} className={isReadOnly ? 'read-only' : ''}>
+        <div className={isReadOnly ? 'read-only' : ''}>
           <BlockNoteView editor={editor} theme="dark" editable={!isReadOnly} />
         </div>
 
-        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} />
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} />
       </div>
     </>
   )
