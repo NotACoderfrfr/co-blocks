@@ -31,7 +31,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
     const contentStr = JSON.stringify(initialContent)
     
     // Only update if content is actually different
-    if (contentStr === lastUpdateRef.current) return
+    if (contentStr === lastUpdateRef.current || isEditingRef.current) return
     
     lastUpdateRef.current = contentStr
 

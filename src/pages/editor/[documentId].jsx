@@ -25,7 +25,6 @@ export default function EditorPage() {
   const saveTimeoutRef = useRef(null)
   const [userRole, setUserRole] = useState('read')
   const [document, setDocument] = useState(null)
-  const [contentVersion, setContentVersion] = useState(0)
   const convex = useConvex()
   const lastFetchRef = useRef(null)
 
@@ -38,7 +37,7 @@ export default function EditorPage() {
     }
   }, [router])
 
-  // Real-time polling - force state update even if same reference
+  // Real-time polling
   const fetchDocument = useCallback(async () => {
     if (!documentId) return
     try {
@@ -46,10 +45,8 @@ export default function EditorPage() {
       if (doc) {
         const contentStr = JSON.stringify(doc.content)
         if (contentStr !== lastFetchRef.current) {
-          console.log('Content changed, updating...')
           lastFetchRef.current = contentStr
           setDocument(doc)
-          setContentVersion(v => v + 1)
         }
       }
     } catch (err) {
@@ -264,7 +261,7 @@ export default function EditorPage() {
 
         <div className="max-w-4xl mx-auto px-6 py-8">
           {userRole === 'read' && <div className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 mb-4">Read-only access</div>}
-          <BlockNoteEditor key={contentVersion} initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
+          <BlockNoteEditor initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
         </div>
 
         {showLinkModal && isOwnerOrAdmin && (
