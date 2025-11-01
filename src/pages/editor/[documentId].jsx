@@ -6,18 +6,18 @@ import { useConvex } from "convex/react"
 import { api } from '../../../convex/_generated/api'
 import dynamic from 'next/dynamic'
 
-const BlockNoteEditor = dynamic(() => import('../../components/BlockNoteEditor'), {
-  ssr: false,
-})
+const BlockNoteEditor = dynamic(() => import('../../components/BlockNoteEditor'), { ssr: false })
 
 export default function EditorPage() {
   const router = useRouter()
   const { documentId } = router.query
   const [userId, setUserId] = useState(null)
   const [document, setDocument] = useState(null)
+  const [userRole, setUserRole] = useState('read')
   const convex = useConvex()
   const lastFetchRef = useRef(null)
-  const fetchCountRef = useRef(0)
+  const isUserEditingRef = useRef(false)
+  const editTimeoutRef = useRef(null)
 
   useEffect(() => {
     const id = localStorage.getItem('userId')
@@ -25,20 +25,17 @@ export default function EditorPage() {
     else setUserId(id)
   }, [router])
 
+  // Polling - pause while user is editing
   const fetchDocument = useCallback(async () => {
-    if (!documentId) return
+    if (!documentId || isUserEditingRef.current) return
     try {
       const doc = await convex.query(api.documents.getDocument, { documentId })
       if (doc) {
         const contentStr = JSON.stringify(doc.content)
-        fetchCountRef.current++
-        
         if (contentStr !== lastFetchRef.current) {
-          console.log(`Fetch #${fetchCountRef.current}: Content changed!`)
+          console.log('Content updated!')
           lastFetchRef.current = contentStr
           setDocument(doc)
-        } else {
-          console.log(`Fetch #${fetchCountRef.current}: No change`)
         }
       }
     } catch (err) {
@@ -50,7 +47,7 @@ export default function EditorPage() {
     if (!documentId) return
     
     fetchDocument()
-    const interval = setInterval(fetchDocument, 300)
+    const interval = setInterval(fetchDocument, 500)
     
     return () => clearInterval(interval)
   }, [documentId, fetchDocument])
@@ -63,8 +60,7 @@ export default function EditorPage() {
   const removePermission = useMutation(api.sharing.removePermission)
   const updatePresence = useMutation(api.presence.updatePresence)
   const removePresence = useMutation(api.presence.removePresence)
-
-  const [userRole, setUserRole] = useState('read')
+  const saveTimeoutRef = useRef(null)
   const [showShareModal, setShowShareModal] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
@@ -73,7 +69,6 @@ export default function EditorPage() {
   const [sharingSuccess, setSharingSuccess] = useState('')
   const [linkRole, setLinkRole] = useState('edit')
   const [shareLink, setShareLink] = useState('')
-  const saveTimeoutRef = useRef(null)
 
   useEffect(() => {
     if (!document || !userId) return
@@ -98,18 +93,12 @@ export default function EditorPage() {
     }
   }, [userId, documentId, updatePresence, removePresence])
 
-  useEffect(() => {
-    const handleBeforeUnload = async () => {
-      if (userId && documentId) {
-        await removePresence({ documentId, userId }).catch(console.error)
-      }
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [userId, documentId, removePresence])
-
   const handleSave = async (content, title) => {
     if (!documentId || !userId || userRole === 'read') return
+
+    isUserEditingRef.current = true
+    if (editTimeoutRef.current) clearTimeout(editTimeoutRef.current)
+
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
     saveTimeoutRef.current = setTimeout(async () => {
       try {
@@ -120,7 +109,11 @@ export default function EditorPage() {
       } catch (err) {
         console.error('Error saving:', err)
       }
-    }, 500)
+    }, 800)
+
+    editTimeoutRef.current = setTimeout(() => {
+      isUserEditingRef.current = false
+    }, 1500)
   }
 
   const handleShare = async (e) => {
@@ -193,8 +186,8 @@ export default function EditorPage() {
             <div className="flex gap-3">
               {isOwnerOrAdmin && (
                 <>
-                  <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg">Link</button>
-                  <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg">Share</button>
+                  <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-cyan-600 text-white text-sm rounded">Link</button>
+                  <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-purple-600 text-white text-sm rounded">Share</button>
                 </>
               )}
               <span className="text-xs px-3 py-1 bg-white/10 rounded">{userRole}</span>
@@ -210,7 +203,7 @@ export default function EditorPage() {
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
             <div className="glass rounded-2xl p-8 max-w-2xl w-full">
               <h2 className="text-2xl font-bold mb-6 gradient-text">Share Link</h2>
-              <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white mb-4">
+              <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded text-white mb-4">
                 <option value="read">View</option>
                 <option value="edit">Edit</option>
                 <option value="admin">Admin</option>
@@ -218,12 +211,12 @@ export default function EditorPage() {
               <button onClick={generateShareLink} className="w-full px-6 py-3 bg-cyan-600 text-white mb-4">Generate</button>
               {shareLink && (
                 <>
-                  <div className="p-3 bg-white/5 border border-white/10 rounded mb-3 text-sm break-all">{shareLink}</div>
+                  <div className="p-3 bg-white/5 border border-white/10 rounded text-sm break-all mb-3">{shareLink}</div>
                   <button onClick={copyToClipboard} className="w-full px-6 py-3 bg-purple-600 text-white mb-4">Copy</button>
                 </>
               )}
               {sharingSuccess && <div className="p-3 bg-green-500/10 text-green-400 mb-4">{sharingSuccess}</div>}
-              <button onClick={() => setShowLinkModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
+              <button onClick={() => setShowLinkModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded">Close</button>
             </div>
           </div>
         )}
@@ -233,8 +226,8 @@ export default function EditorPage() {
             <div className="glass rounded-2xl p-8 max-w-2xl w-full">
               <h2 className="text-2xl font-bold mb-6 gradient-text">Share</h2>
               <form onSubmit={handleShare}>
-                <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white mb-4" placeholder="user@example.com" />
-                <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white mb-4">
+                <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded text-white mb-4" placeholder="user@example.com" />
+                <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded text-white mb-4">
                   <option value="read">Read</option>
                   <option value="edit">Edit</option>
                   <option value="admin">Admin</option>
@@ -253,7 +246,7 @@ export default function EditorPage() {
                   ))}
                 </div>
               )}
-              <button onClick={() => setShowShareModal(false)} className="w-full mt-4 px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
+              <button onClick={() => setShowShareModal(false)} className="w-full mt-4 px-4 py-2 bg-white/10 text-white rounded">Close</button>
             </div>
           </div>
         )}
