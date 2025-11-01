@@ -25,7 +25,9 @@ export default function EditorPage() {
   const saveTimeoutRef = useRef(null)
   const [userRole, setUserRole] = useState('read')
   const [document, setDocument] = useState(null)
+  const [contentVersion, setContentVersion] = useState(0)
   const convex = useConvex()
+  const lastFetchRef = useRef(null)
 
   useEffect(() => {
     const id = localStorage.getItem('userId')
@@ -36,12 +38,20 @@ export default function EditorPage() {
     }
   }, [router])
 
-  // Real-time polling - just update state, let editor handle it
+  // Real-time polling - force state update even if same reference
   const fetchDocument = useCallback(async () => {
     if (!documentId) return
     try {
       const doc = await convex.query(api.documents.getDocument, { documentId })
-      setDocument(doc)
+      if (doc) {
+        const contentStr = JSON.stringify(doc.content)
+        if (contentStr !== lastFetchRef.current) {
+          console.log('Content changed, updating...')
+          lastFetchRef.current = contentStr
+          setDocument(doc)
+          setContentVersion(v => v + 1)
+        }
+      }
     } catch (err) {
       console.error('Fetch error:', err)
     }
@@ -229,57 +239,52 @@ export default function EditorPage() {
                 <div className="flex items-center space-x-2 px-4 py-2 glass rounded-lg border border-white/10">
                   <div className="flex -space-x-2">
                     {activeUsers.slice(0, 3).map((user, idx) => (
-                      <div key={`${user.userId}-${idx}`} className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center text-white text-xs font-bold border-2 border-black" title={user.email}>
+                      <div key={`${user.userId}-${idx}`} className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center text-white text-xs font-bold border-2 border-black">
                         {user.name?.[0] || user.email?.[0]}
                       </div>
                     ))}
                     {activeUsers.length > 3 && <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white text-xs font-bold border-2 border-black">+{activeUsers.length - 3}</div>}
                   </div>
-                  <span className="text-xs text-gray-400 ml-2">{activeUsers.length} viewing</span>
+                  <span className="text-xs text-gray-400">{activeUsers.length} viewing</span>
                 </div>
               )}
 
               <div className="flex items-center space-x-3 ml-4">
                 {isOwnerOrAdmin && (
                   <>
-                    <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-sm font-medium rounded-lg">🔗 Link</button>
-                    <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg neon-glow">👥 Share</button>
+                    <button onClick={() => setShowLinkModal(true)} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-sm font-medium rounded-lg">Link</button>
+                    <button onClick={() => setShowShareModal(true)} className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium rounded-lg neon-glow">Share</button>
                   </>
                 )}
-                <span className="text-xs px-3 py-1 bg-white/10 rounded text-gray-300">
-                  {userRole === 'admin' ? '🔑 Admin' : userRole === 'edit' ? '✏️ Editor' : '👁️ Viewer'}
-                </span>
+                <span className="text-xs px-3 py-1 bg-white/10 rounded">{userRole === 'admin' ? 'Admin' : userRole === 'edit' ? 'Editor' : 'Viewer'}</span>
               </div>
             </div>
           </div>
         </nav>
 
         <div className="max-w-4xl mx-auto px-6 py-8">
-          {userRole === 'read' && <div className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 mb-4">📖 Read-only access</div>}
-          <BlockNoteEditor initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
+          {userRole === 'read' && <div className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 mb-4">Read-only access</div>}
+          <BlockNoteEditor key={contentVersion} initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
         </div>
 
         {showLinkModal && isOwnerOrAdmin && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
             <div className="glass-strong rounded-2xl p-8 max-w-2xl w-full border border-white/10">
-              <h2 className="text-2xl font-bold mb-6 gradient-text">Share with Link</h2>
+              <h2 className="text-2xl font-bold mb-6 gradient-text">Share Link</h2>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Permission Level</label>
-                  <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white">
-                    <option value="read">👁️ View only</option>
-                    <option value="edit">✏️ Can edit</option>
-                    <option value="admin">🔑 Admin</option>
-                  </select>
-                </div>
-                <button onClick={generateShareLink} className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg">Generate Link</button>
+                <select value={linkRole} onChange={(e) => setLinkRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white">
+                  <option value="read">View only</option>
+                  <option value="edit">Can edit</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button onClick={generateShareLink} className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg">Generate</button>
                 {shareLink && (
                   <div>
                     <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-white text-sm break-all">{shareLink}</div>
-                    <button onClick={copyToClipboard} className="w-full mt-3 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg">📋 Copy Link</button>
+                    <button onClick={copyToClipboard} className="w-full mt-3 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white">Copy</button>
                   </div>
                 )}
-                {sharingSuccess && <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">{sharingSuccess}</div>}
+                {sharingSuccess && <div className="p-3 bg-green-500/10 text-green-400">{sharingSuccess}</div>}
                 <button onClick={() => setShowLinkModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg">Close</button>
               </div>
             </div>
@@ -289,36 +294,27 @@ export default function EditorPage() {
         {showShareModal && isOwnerOrAdmin && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
             <div className="glass-strong rounded-2xl p-8 max-w-2xl w-full border border-white/10">
-              <h2 className="text-2xl font-bold mb-6 gradient-text">Share Document</h2>
+              <h2 className="text-2xl font-bold mb-6 gradient-text">Share</h2>
               <form onSubmit={handleShare} className="mb-8 pb-8 border-b border-white/10">
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
-                    <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="user@example.com" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Permission</label>
-                    <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white">
-                      <option value="read">👁️ Read only</option>
-                      <option value="edit">✏️ Can edit</option>
-                      <option value="admin">🔑 Admin</option>
-                    </select>
-                  </div>
-                  {sharingError && <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">{sharingError}</div>}
-                  {sharingSuccess && <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">{sharingSuccess}</div>}
-                  <button type="submit" className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg">Share Document</button>
+                  <input type="email" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="user@example.com" />
+                  <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white">
+                    <option value="read">Read only</option>
+                    <option value="edit">Edit</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  {sharingError && <div className="p-3 bg-red-500/10 text-red-400">{sharingError}</div>}
+                  {sharingSuccess && <div className="p-3 bg-green-500/10 text-green-400">{sharingSuccess}</div>}
+                  <button type="submit" className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg">Share</button>
                 </div>
               </form>
               {permissions && permissions.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 text-white">Shared with ({permissions.length})</h3>
+                  <h3 className="text-lg font-semibold mb-4">Shared ({permissions.length})</h3>
                   <div className="space-y-3">
                     {permissions.map((perm) => (
-                      <div key={perm._id} className="flex items-center justify-between p-4 glass rounded-lg border border-white/10">
-                        <div>
-                          <p className="font-medium text-white">{perm.user?.email}</p>
-                          <p className="text-sm text-gray-400">{perm.role === 'read' && '👁️ Read only'}{perm.role === 'edit' && '✏️ Can edit'}{perm.role === 'admin' && '🔑 Admin'}</p>
-                        </div>
+                      <div key={perm._id} className="flex items-center justify-between p-4 glass rounded-lg">
+                        <p className="font-medium">{perm.user?.email}</p>
                         <button onClick={() => handleRemoveAccess(perm._id)} className="px-3 py-1 text-sm bg-red-500/20 text-red-400 rounded">Remove</button>
                       </div>
                     ))}
