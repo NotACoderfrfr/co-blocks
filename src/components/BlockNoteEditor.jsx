@@ -4,7 +4,7 @@ import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
 
-export default function BlockNoteEditor({ initialContent, onChange, userRole }) {
+export default function BlockNoteEditor({ initialContent, onChange, userRole, isEditable = true }) {
   const [mounted, setMounted] = useState(false)
   const [activeStyles, setActiveStyles] = useState({})
   const [contextMenu, setContextMenu] = useState(null)
@@ -12,10 +12,14 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
   const fileInputRef = useRef(null)
   const editorRef = useRef(null)
   const lastContentRef = useRef(null)
+  const isUpdatingRef = useRef(false)
+  const isFocusedRef = useRef(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  const isReadOnly = !isEditable || userRole === 'read'
 
   const editor = useCreateBlockNote({
     initialContent: initialContent || [
@@ -28,26 +32,30 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
 
   editorRef.current = editor
 
-  // Update editor content when it changes from real-time polling
+  // Update editor content when it changes from real-time polling - skip if focused or editing
   useEffect(() => {
-    if (!editor || !initialContent) return
+    if (!editor || !initialContent || isReadOnly || isFocusedRef.current) return
     
     const contentStr = JSON.stringify(initialContent)
-    if (contentStr === lastContentRef.current) return
+    if (contentStr === lastContentRef.current || isUpdatingRef.current) return
     
     lastContentRef.current = contentStr
     
-    // Only update if different
     try {
-      editor.replaceBlocks(editor.document, initialContent)
+      isUpdatingRef.current = true
+      setTimeout(() => {
+        editor.replaceBlocks(editor.document, initialContent)
+        isUpdatingRef.current = false
+      }, 0)
     } catch (e) {
       console.error('Error updating content:', e)
+      isUpdatingRef.current = false
     }
-  }, [initialContent, editor])
+  }, [initialContent, editor, isReadOnly])
 
   // Update active styles when selection changes
   useEffect(() => {
-    if (!editor) return
+    if (!editor || isReadOnly) return
 
     let animationFrameId
 
@@ -84,7 +92,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
         cancelAnimationFrame(animationFrameId)
       }
     }
-  }, [editor, onChange])
+  }, [editor, onChange, isReadOnly])
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null)
@@ -93,7 +101,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
   }, [])
 
   const insertBlock = (type) => {
-    if (!editor) return
+    if (!editor || isReadOnly) return
     
     const currentBlock = editor.getTextCursorPosition().block
     
@@ -190,7 +198,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
   }
 
   const toggleStyle = (style) => {
-    if (!editor) return
+    if (!editor || isReadOnly) return
     editor.toggleStyles({ [style]: true })
     
     setTimeout(() => {
@@ -200,7 +208,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
   }
 
   const setHeading = (level) => {
-    if (!editor) return
+    if (!editor || isReadOnly) return
     const currentBlock = editor.getTextCursorPosition().block
     editor.updateBlock(currentBlock, {
       type: 'heading',
@@ -209,13 +217,17 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
   }
 
   const deleteBlock = () => {
-    if (!editor) return
+    if (!editor || isReadOnly) return
     const currentBlock = editor.getTextCursorPosition().block
     editor.removeBlocks([currentBlock])
     setContextMenu(null)
   }
 
   const handleContextMenu = (e) => {
+    if (isReadOnly) {
+      e.preventDefault()
+      return
+    }
     e.preventDefault()
     setContextMenu({
       x: e.clientX,
@@ -230,8 +242,6 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
       </div>
     )
   }
-
-  const isReadOnly = userRole === 'read'
 
   return (
     <>
@@ -250,8 +260,13 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
         }
         
         .bn-editor.read-only {
-          opacity: 0.8 !important;
           pointer-events: none !important;
+          user-select: text !important;
+          opacity: 0.8 !important;
+        }
+        
+        .bn-editor.read-only .ProseMirror {
+          cursor: default !important;
         }
         
         .bn-block-content {
@@ -371,7 +386,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
           transition: all 0.2s;
         }
         
-        .toolbar-btn:hover {
+        .toolbar-btn:hover:not(:disabled) {
           background: rgba(124, 58, 237, 0.2);
           border-color: rgba(167, 139, 250, 0.3);
         }
@@ -384,7 +399,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
         }
         
         .toolbar-btn:disabled {
-          opacity: 0.5;
+          opacity: 0.4;
           cursor: not-allowed;
         }
       `}</style>
@@ -394,132 +409,27 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
         {!isReadOnly && (
           <div className="glass rounded-lg p-3 border border-white/10" style={{background: 'rgba(255, 255, 255, 0.03)', backdropFilter: 'blur(10px)'}}>
             <div className="flex flex-wrap gap-2">
-              {/* Text Formatting */}
               <div className="flex gap-1 border-r border-white/10 pr-2">
-                <button
-                  onClick={() => toggleStyle('bold')}
-                  className={`toolbar-btn ${activeStyles.bold ? 'active' : ''}`}
-                  title="Bold (Ctrl+B)"
-                  disabled={isReadOnly}
-                >
-                  <strong>B</strong>
-                </button>
-                <button
-                  onClick={() => toggleStyle('italic')}
-                  className={`toolbar-btn ${activeStyles.italic ? 'active' : ''}`}
-                  title="Italic (Ctrl+I)"
-                  disabled={isReadOnly}
-                >
-                  <em>I</em>
-                </button>
-                <button
-                  onClick={() => toggleStyle('underline')}
-                  className={`toolbar-btn ${activeStyles.underline ? 'active' : ''}`}
-                  title="Underline (Ctrl+U)"
-                  disabled={isReadOnly}
-                >
-                  <u>U</u>
-                </button>
-                <button
-                  onClick={() => toggleStyle('strike')}
-                  className={`toolbar-btn ${activeStyles.strike ? 'active' : ''}`}
-                  title="Strikethrough"
-                  disabled={isReadOnly}
-                >
-                  <s>S</s>
-                </button>
-                <button
-                  onClick={() => toggleStyle('code')}
-                  className={`toolbar-btn ${activeStyles.code ? 'active' : ''}`}
-                  title="Inline Code"
-                  disabled={isReadOnly}
-                >
-                  {'</>'}
-                </button>
+                <button onClick={() => toggleStyle('bold')} className={`toolbar-btn ${activeStyles.bold ? 'active' : ''}`} title="Bold" disabled={isReadOnly}><strong>B</strong></button>
+                <button onClick={() => toggleStyle('italic')} className={`toolbar-btn ${activeStyles.italic ? 'active' : ''}`} title="Italic" disabled={isReadOnly}><em>I</em></button>
+                <button onClick={() => toggleStyle('underline')} className={`toolbar-btn ${activeStyles.underline ? 'active' : ''}`} title="Underline" disabled={isReadOnly}><u>U</u></button>
+                <button onClick={() => toggleStyle('strike')} className={`toolbar-btn ${activeStyles.strike ? 'active' : ''}`} title="Strike" disabled={isReadOnly}><s>S</s></button>
+                <button onClick={() => toggleStyle('code')} className={`toolbar-btn ${activeStyles.code ? 'active' : ''}`} title="Code" disabled={isReadOnly}>{'</>'}</button>
               </div>
-
-              {/* Headings */}
               <div className="flex gap-1 border-r border-white/10 pr-2">
-                <button
-                  onClick={() => setHeading(1)}
-                  className="toolbar-btn"
-                  title="Heading 1"
-                  disabled={isReadOnly}
-                >
-                  H1
-                </button>
-                <button
-                  onClick={() => setHeading(2)}
-                  className="toolbar-btn"
-                  title="Heading 2"
-                  disabled={isReadOnly}
-                >
-                  H2
-                </button>
-                <button
-                  onClick={() => setHeading(3)}
-                  className="toolbar-btn"
-                  title="Heading 3"
-                  disabled={isReadOnly}
-                >
-                  H3
-                </button>
+                <button onClick={() => setHeading(1)} className="toolbar-btn" title="H1" disabled={isReadOnly}>H1</button>
+                <button onClick={() => setHeading(2)} className="toolbar-btn" title="H2" disabled={isReadOnly}>H2</button>
+                <button onClick={() => setHeading(3)} className="toolbar-btn" title="H3" disabled={isReadOnly}>H3</button>
               </div>
-
-              {/* Lists */}
               <div className="flex gap-1 border-r border-white/10 pr-2">
-                <button
-                  onClick={() => insertBlock('bulletListItem')}
-                  className="toolbar-btn"
-                  title="Bullet List"
-                  disabled={isReadOnly}
-                >
-                  • List
-                </button>
-                <button
-                  onClick={() => insertBlock('numberedListItem')}
-                  className="toolbar-btn"
-                  title="Numbered List"
-                  disabled={isReadOnly}
-                >
-                  1. List
-                </button>
-                <button
-                  onClick={() => insertBlock('checkListItem')}
-                  className="toolbar-btn"
-                  title="Todo List"
-                  disabled={isReadOnly}
-                >
-                  ☑ Todo
-                </button>
+                <button onClick={() => insertBlock('bulletListItem')} className="toolbar-btn" title="Bullet" disabled={isReadOnly}>• List</button>
+                <button onClick={() => insertBlock('numberedListItem')} className="toolbar-btn" title="Numbered" disabled={isReadOnly}>1. List</button>
+                <button onClick={() => insertBlock('checkListItem')} className="toolbar-btn" title="Todo" disabled={isReadOnly}>☑ Todo</button>
               </div>
-
-              {/* Blocks */}
               <div className="flex gap-1">
-                <button
-                  onClick={() => insertBlock('codeBlock')}
-                  className="toolbar-btn"
-                  title="Code Block"
-                  disabled={isReadOnly}
-                >
-                  {'{ } Code'}
-                </button>
-                <button
-                  onClick={() => insertBlock('table')}
-                  className="toolbar-btn"
-                  title="Table"
-                  disabled={isReadOnly}
-                >
-                  ▦ Table
-                </button>
-                <button
-                  onClick={() => insertBlock('image')}
-                  className="toolbar-btn"
-                  title="Image"
-                  disabled={isReadOnly}
-                >
-                  🖼 Image
-                </button>
+                <button onClick={() => insertBlock('codeBlock')} className="toolbar-btn" title="Code Block" disabled={isReadOnly}>{'{ } Code'}</button>
+                <button onClick={() => insertBlock('table')} className="toolbar-btn" title="Table" disabled={isReadOnly}>▦ Table</button>
+                <button onClick={() => insertBlock('image')} className="toolbar-btn" title="Image" disabled={isReadOnly}>🖼 Image</button>
               </div>
             </div>
           </div>
@@ -527,75 +437,33 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole }) 
 
         {isReadOnly && (
           <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm">
-            📖 You have read-only access to this document
+            📖 Read-only access
           </div>
         )}
 
-        {/* Editor */}
-        <div onContextMenu={handleContextMenu} className={isReadOnly ? 'read-only' : ''}>
+        <div onContextMenu={handleContextMenu} className={isReadOnly ? 'read-only' : ''} onFocus={() => { isFocusedRef.current = true }} onBlur={() => { isFocusedRef.current = false }}>
           <BlockNoteView editor={editor} theme="dark" />
         </div>
 
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleFileUpload}
-          style={{ display: 'none' }}
-        />
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} />
 
-        {/* Image Upload Modal */}
-        {showImageModal && (
+        {showImageModal && !isReadOnly && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
-            <div className="glass rounded-2xl p-8 max-w-md w-full border border-white/10" style={{background: 'rgba(255, 255, 255, 0.05)', backdropFilter: 'blur(20px)'}}>
-              <h2 className="text-2xl font-bold mb-6 text-center" style={{background: 'linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #06b6d4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
-                Insert Image
-              </h2>
+            <div className="glass rounded-2xl p-8 max-w-md w-full border border-white/10">
+              <h2 className="text-2xl font-bold mb-6 gradient-text">Insert Image</h2>
               <div className="space-y-3">
-                <button
-                  onClick={insertImageFromUrl}
-                  className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all"
-                >
-                  🔗 From URL
-                </button>
-                <button
-                  onClick={insertImageFromFile}
-                  className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-700 hover:to-blue-700 transition-all"
-                >
-                  📁 Upload from Device
-                </button>
-                <button
-                  onClick={() => setShowImageModal(false)}
-                  className="w-full px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
-                >
-                  Cancel
-                </button>
+                <button onClick={insertImageFromUrl} className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-pink-700">🔗 From URL</button>
+                <button onClick={insertImageFromFile} className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg hover:from-cyan-700 hover:to-blue-700">📁 Upload</button>
+                <button onClick={() => setShowImageModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20">Cancel</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Context Menu */}
         {contextMenu && !isReadOnly && (
-          <div
-            style={{
-              position: 'fixed',
-              top: contextMenu.y,
-              left: contextMenu.x,
-              zIndex: 1000,
-            }}
-            className="rounded-lg border border-red-500/30 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{background: 'rgba(20, 20, 20, 0.95)', backdropFilter: 'blur(10px)'}}>
-              <button
-                onClick={deleteBlock}
-                className="w-full px-4 py-2 text-left text-red-400 hover:bg-red-500/20 transition-colors flex items-center space-x-2"
-              >
-                <span>🗑️</span>
-                <span>Delete Block</span>
-              </button>
+          <div style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 1000 }} className="rounded-lg border border-red-500/30" onClick={(e) => e.stopPropagation()}>
+            <div style={{background: 'rgba(20, 20, 20, 0.95)'}}>
+              <button onClick={deleteBlock} className="w-full px-4 py-2 text-left text-red-400 hover:bg-red-500/20">🗑️ Delete</button>
             </div>
           </div>
         )}

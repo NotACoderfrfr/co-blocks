@@ -24,6 +24,7 @@ export default function EditorPage() {
   const [document, setDocument] = useState(null)
   const convex = useConvex()
   const refetchIntervalRef = useRef(null)
+  const isTypingRef = useRef(false)
 
   useEffect(() => {
     const id = localStorage.getItem('userId')
@@ -34,9 +35,9 @@ export default function EditorPage() {
     }
   }, [router])
 
-  // Real-time document polling with aggressive refresh
+  // Real-time document polling - skip if user is typing
   const fetchDocument = useCallback(async () => {
-    if (!documentId) return
+    if (!documentId || isTypingRef.current) return
     try {
       const doc = await convex.query(api.documents.getDocument, { documentId })
       setDocument(doc)
@@ -53,8 +54,7 @@ export default function EditorPage() {
 
     fetchDocument()
     
-    // Poll every 300ms for real-time updates
-    refetchIntervalRef.current = setInterval(fetchDocument, 100)
+    refetchIntervalRef.current = setInterval(fetchDocument, 500)
     
     return () => {
       if (refetchIntervalRef.current) {
@@ -80,7 +80,6 @@ export default function EditorPage() {
   const updatePresence = useMutation(api.presence.updatePresence)
   const removePresence = useMutation(api.presence.removePresence)
 
-  // Determine user's role
   useEffect(() => {
     if (!document || !userId) return
     
@@ -121,7 +120,10 @@ export default function EditorPage() {
   }, [userId, documentId, removePresence])
 
   const handleSave = async (content, title) => {
-    if (!documentId || !userId || userRole === "read") return
+    if (userRole === "read") return
+    if (!documentId || !userId || userRole === 'read') return
+
+    isTypingRef.current = true
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
@@ -143,9 +145,11 @@ export default function EditorPage() {
           })
         }
 
+        isTypingRef.current = false
         await fetchDocument()
       } catch (err) {
-        console.error("Error saving:", err)
+        console.error('Error saving:', err)
+        isTypingRef.current = false
       }
     }, 200)
   }
@@ -259,9 +263,9 @@ export default function EditorPage() {
               {activeUsers && activeUsers.length > 0 && (
                 <div className="flex items-center space-x-2 px-4 py-2 glass rounded-lg border border-white/10">
                   <div className="flex -space-x-2">
-                    {activeUsers.slice(0, 3).map((user) => (
+                    {activeUsers.slice(0, 3).map((user, idx) => (
                       <div
-                        key={document._id + activeUsers.length}
+                        key={`${user.userId}-${idx}`}
                         className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center text-white text-xs font-bold border-2 border-black"
                         title={user.email}
                       >
@@ -297,9 +301,10 @@ export default function EditorPage() {
 
         <div className="max-w-4xl mx-auto px-6 py-8">
           <BlockNoteEditor
-            userRole={userRole}
             initialContent={JSON.parse(document.content)}
             onChange={(content) => userRole !== 'read' && handleSave(content, document.title)}
+            userRole={userRole}
+            isEditable={userRole !== 'read'}
           />
         </div>
 
