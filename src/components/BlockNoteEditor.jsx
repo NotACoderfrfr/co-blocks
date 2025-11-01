@@ -8,7 +8,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
   const [mounted, setMounted] = useState(false)
   const fileInputRef = useRef(null)
   const editorRef = useRef(null)
-  const lastUpdateRef = useRef(null)
+  const lastContentRef = useRef(JSON.stringify(initialContent))
   const isEditingRef = useRef(false)
   const editTimeoutRef = useRef(null)
 
@@ -24,21 +24,20 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
 
   editorRef.current = editor
 
-  // Aggressive real-time - try to update ALWAYS unless editing
+  // Update content ONLY when not editing and content is different
   useEffect(() => {
     if (!editor || !initialContent || isReadOnly || isEditingRef.current) return
     
-    const contentStr = JSON.stringify(initialContent)
+    const newContent = JSON.stringify(initialContent)
     
-    // Only update if content is actually different
-    if (contentStr === lastUpdateRef.current || isEditingRef.current) return
+    if (newContent === lastContentRef.current) return
     
-    lastUpdateRef.current = contentStr
+    lastContentRef.current = newContent
 
     try {
       editor.replaceBlocks(editor.document, initialContent)
     } catch (e) {
-      console.error('Update error:', e)
+      console.error('Error:', e)
     }
   }, [initialContent, editor, isReadOnly])
 
@@ -48,13 +47,14 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
 
     const handleChange = () => {
       isEditingRef.current = true
-      onChange(editor.document)
+      const newContent = editor.document
+      lastContentRef.current = JSON.stringify(newContent)
+      onChange(newContent)
       
       if (editTimeoutRef.current) clearTimeout(editTimeoutRef.current)
       editTimeoutRef.current = setTimeout(() => {
         isEditingRef.current = false
-        lastUpdateRef.current = null
-      }, 500)
+      }, 2000)
     }
 
     editor.onChange(handleChange)
@@ -115,19 +115,15 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
                 <button onClick={() => setHeading(2)} className="toolbar-btn">H2</button>
                 <button onClick={() => setHeading(3)} className="toolbar-btn">H3</button>
               </div>
-              <div className="flex gap-1 border-r border-white/10 pr-2">
-                <button onClick={() => insertBlock('bulletListItem')} className="toolbar-btn">• List</button>
-                <button onClick={() => insertBlock('numberedListItem')} className="toolbar-btn">1. List</button>
-              </div>
               <div className="flex gap-1">
+                <button onClick={() => insertBlock('bulletListItem')} className="toolbar-btn">• List</button>
                 <button onClick={() => insertBlock('codeBlock')} className="toolbar-btn">Code</button>
-                <button onClick={() => insertBlock('table')} className="toolbar-btn">Table</button>
               </div>
             </div>
           </div>
         )}
 
-        {isReadOnly && <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm">📖 Read-only</div>}
+        {isReadOnly && <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm">Read-only</div>}
 
         <div className={isReadOnly ? 'read-only' : ''}>
           <BlockNoteView editor={editor} theme="dark" editable={!isReadOnly} />
