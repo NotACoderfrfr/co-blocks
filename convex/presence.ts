@@ -7,6 +7,7 @@ export const updatePresence = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    // Delete old presence for this user on this document
     const existing = await ctx.db
       .query("presence")
       .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
@@ -38,8 +39,13 @@ export const getActiveUsers = query({
     const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
     const activePresence = presence.filter((p) => p.lastSeen > fiveMinutesAgo);
 
+    // Remove duplicates
+    const uniquePresence = Array.from(
+      new Map(activePresence.map((p) => [p.userId, p])).values()
+    );
+
     const users = await Promise.all(
-      activePresence.map(async (pres) => {
+      uniquePresence.map(async (pres) => {
         const user = await ctx.db.get(pres.userId);
         return {
           userId: pres.userId,

@@ -1,0 +1,23 @@
+  const convex = useConvex()
+  const [document, setDocument] = useState(null)
+
+  // Poll document every 500ms for real-time updates
+  useEffect(() => {
+    if (!documentId) {
+      setDocument(null)
+      return
+    }
+
+    const fetchDoc = async () => {
+      try {
+        const doc = await convex.query(api.documents.getDocument, { documentId })
+        setDocument(doc)
+      } catch (err) {
+        console.error('Fetch error:', err)
+      }
+    }
+
+    fetchDoc()
+    const interval = setInterval(fetchDoc, 500)
+    return () => clearInterval(interval)
+  }, [documentId, convex])

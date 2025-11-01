@@ -1,5 +1,5 @@
 import UserInfo from '../../components/UserInfo'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { useQuery, useMutation } from 'convex/react'
 import { useConvex } from "convex/react"
@@ -21,9 +21,6 @@ export default function EditorPage() {
   const [sharingSuccess, setSharingSuccess] = useState('')
   const saveTimeoutRef = useRef(null)
   const [userRole, setUserRole] = useState('read')
-  const [document, setDocument] = useState(null)
-  const convex = useConvex()
-  const refetchIntervalRef = useRef(null)
 
   useEffect(() => {
     const id = localStorage.getItem('userId')
@@ -34,34 +31,29 @@ export default function EditorPage() {
     }
   }, [router])
 
-  // Real-time document polling with aggressive refresh
-  const fetchDocument = useCallback(async () => {
-    if (!documentId) return
-    try {
-      const doc = await convex.query(api.documents.getDocument, { documentId })
-      setDocument(doc)
-    } catch (err) {
-      console.error('Fetch error:', err)
-    }
-  }, [documentId, convex])
+  const convex = useConvex()
+  const [document, setDocument] = useState(null)
 
+  // Poll document every 500ms for real-time updates
   useEffect(() => {
     if (!documentId) {
       setDocument(null)
       return
     }
 
-    fetchDocument()
-    
-    // Poll every 300ms for real-time updates
-    refetchIntervalRef.current = setInterval(fetchDocument, 300)
-    
-    return () => {
-      if (refetchIntervalRef.current) {
-        clearInterval(refetchIntervalRef.current)
+    const fetchDoc = async () => {
+      try {
+        const doc = await convex.query(api.documents.getDocument, { documentId })
+        setDocument(doc)
+      } catch (err) {
+        console.error('Fetch error:', err)
       }
     }
-  }, [documentId, fetchDocument])
+
+    fetchDoc()
+    const interval = setInterval(fetchDoc, 500)
+    return () => clearInterval(interval)
+  }, [documentId, convex])
 
   const permissions = useQuery(
     api.sharing.getDocumentPermissions,
@@ -142,13 +134,10 @@ export default function EditorPage() {
             title,
           })
         }
-
-        // Refetch immediately after save
-        await fetchDocument()
       } catch (err) {
         console.error('Error saving:', err)
       }
-    }, 500)
+    }, 1000)
   }
 
   const handleShare = async (e) => {
@@ -236,7 +225,7 @@ export default function EditorPage() {
 
       <UserInfo />
       <div className="min-h-screen bg-black text-white">
-        <nav className="glass border-b border-white/10 sticky top-0 z-40">
+        <nav className="glass border-b border-white/10 sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4 flex-1">

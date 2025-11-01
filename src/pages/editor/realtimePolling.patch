@@ -1,0 +1,16 @@
+  import { useConvex } from 'convex/react'
+  
+  // Add this after other hooks
+  const convex = useConvex()
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  // Poll for real-time updates every 1 second
+  useEffect(() => {
+    if (!documentId) return
+    
+    const interval = setInterval(() => {
+      setRefreshKey(prev => prev + 1)
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [documentId])
