@@ -54,7 +54,7 @@ export default function EditorPage() {
     fetchDocument()
     
     // Poll every 300ms for real-time updates
-    refetchIntervalRef.current = setInterval(fetchDocument, 300)
+    refetchIntervalRef.current = setInterval(fetchDocument, 100)
     
     return () => {
       if (refetchIntervalRef.current) {
@@ -121,7 +121,7 @@ export default function EditorPage() {
   }, [userId, documentId, removePresence])
 
   const handleSave = async (content, title) => {
-    if (!documentId || !userId) return
+    if (!documentId || !userId || userRole === "read") return
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
@@ -143,12 +143,11 @@ export default function EditorPage() {
           })
         }
 
-        // Refetch immediately after save
         await fetchDocument()
       } catch (err) {
-        console.error('Error saving:', err)
+        console.error("Error saving:", err)
       }
-    }, 500)
+    }, 200)
   }
 
   const handleShare = async (e) => {
@@ -262,7 +261,7 @@ export default function EditorPage() {
                   <div className="flex -space-x-2">
                     {activeUsers.slice(0, 3).map((user) => (
                       <div
-                        key={user.userId}
+                        key={document._id + activeUsers.length}
                         className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center text-white text-xs font-bold border-2 border-black"
                         title={user.email}
                       >

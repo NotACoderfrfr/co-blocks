@@ -15,7 +15,6 @@ export default function UserInfo() {
     if (typeof window !== 'undefined') {
       const id = localStorage.getItem('userId')
       setUserId(id)
-      // Set initial position to bottom right
       setPosition({ x: window.innerWidth - 80, y: window.innerHeight - 80 })
     }
   }, [])
@@ -27,34 +26,42 @@ export default function UserInfo() {
     router.push('/auth/login')
   }
 
-  const handleMouseDown = (e) => {
+  const handleStart = (e) => {
     setIsDragging(true)
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY
     setDragOffset({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
+      x: clientX - position.x,
+      y: clientY - position.y,
     })
   }
 
-  const handleMouseMove = (e) => {
+  const handleMove = (e) => {
     if (isDragging) {
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY
       setPosition({
-        x: e.clientX - dragOffset.x,
-        y: e.clientY - dragOffset.y,
+        x: clientX - dragOffset.x,
+        y: clientY - dragOffset.y,
       })
     }
   }
 
-  const handleMouseUp = () => {
+  const handleEnd = () => {
     setIsDragging(false)
   }
 
   useEffect(() => {
     if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
+      document.addEventListener('mousemove', handleMove)
+      document.addEventListener('mouseup', handleEnd)
+      document.addEventListener('touchmove', handleMove)
+      document.addEventListener('touchend', handleEnd)
       return () => {
-        document.removeEventListener('mousemove', handleMouseMove)
-        document.removeEventListener('mouseup', handleMouseUp)
+        document.removeEventListener('mousemove', handleMove)
+        document.removeEventListener('mouseup', handleEnd)
+        document.removeEventListener('touchmove', handleMove)
+        document.removeEventListener('touchend', handleEnd)
       }
     }
   }, [isDragging, dragOffset, position])
@@ -63,12 +70,13 @@ export default function UserInfo() {
 
   return (
     <div
-      className="fixed z-[9999] cursor-grab active:cursor-grabbing"
+      className="fixed z-[9999] cursor-grab active:cursor-grabbing select-none"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
       }}
-      onMouseDown={handleMouseDown}
+      onMouseDown={handleStart}
+      onTouchStart={handleStart}
     >
       <button
         className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold hover:shadow-2xl transition-all hover:scale-110"
@@ -78,7 +86,7 @@ export default function UserInfo() {
       </button>
 
       {showMenu && (
-        <div className="absolute top-14 left-0 bg-gray-900 border border-gray-700 rounded-lg shadow-lg w-48 p-4">
+        <div className="absolute top-14 left-0 bg-gray-900 border border-gray-700 rounded-lg shadow-lg w-48 p-4 pointer-events-auto">
           <div className="text-xs text-gray-400 mb-3 truncate break-all">{user.email}</div>
           <button
             onClick={handleLogout}
