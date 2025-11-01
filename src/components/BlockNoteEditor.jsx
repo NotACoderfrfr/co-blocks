@@ -8,7 +8,7 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
   const [mounted, setMounted] = useState(false)
   const fileInputRef = useRef(null)
   const editorRef = useRef(null)
-  const lastContentRef = useRef(null)
+  const lastContentRef = useRef(JSON.stringify(initialContent))
   const editorContainerRef = useRef(null)
   const hasUserEditRef = useRef(false)
   const editTimeoutRef = useRef(null)
@@ -25,36 +25,32 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
 
   editorRef.current = editor
 
-  // Real-time updates - ONLY when not editing
+  // Watch for external content changes - update if different and not editing
   useEffect(() => {
-    if (!editor || !initialContent || isReadOnly || hasUserEditRef.current) return
+    if (!editor || !initialContent || isReadOnly) return
     
-    const contentStr = JSON.stringify(initialContent)
-    if (contentStr === lastContentRef.current) return
+    const newContent = JSON.stringify(initialContent)
     
-    lastContentRef.current = contentStr
+    if (newContent === lastContentRef.current || hasUserEditRef.current) return
+    
+    lastContentRef.current = newContent
 
-    // Check if editor DOM has focus
-    const proseMirror = editorContainerRef.current?.querySelector('.ProseMirror')
-    const hasFocus = proseMirror && document.activeElement === proseMirror
-
-    if (!hasFocus) {
-      try {
-        editor.replaceBlocks(editor.document, initialContent)
-      } catch (e) {
-        console.error('Update error:', e)
-      }
+    try {
+      editor.replaceBlocks(editor.document, initialContent)
+    } catch (e) {
+      console.error('Error updating:', e)
     }
   }, [initialContent, editor, isReadOnly])
 
+  // Track user edits
   useEffect(() => {
     if (!editor || isReadOnly) return
 
     const handleChange = () => {
       hasUserEditRef.current = true
+      lastContentRef.current = JSON.stringify(editor.document)
       onChange(editor.document)
       
-      // Clear typing flag after 1 second of no changes
       if (editTimeoutRef.current) clearTimeout(editTimeoutRef.current)
       editTimeoutRef.current = setTimeout(() => {
         hasUserEditRef.current = false
