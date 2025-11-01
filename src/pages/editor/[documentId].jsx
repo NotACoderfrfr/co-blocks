@@ -54,7 +54,7 @@ export default function EditorPage() {
     }
 
     fetchDocument()
-    const interval = setInterval(fetchDocument, 200)
+    const interval = setInterval(fetchDocument, 300)
     
     return () => clearInterval(interval)
   }, [documentId, fetchDocument])

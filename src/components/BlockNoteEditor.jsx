@@ -6,14 +6,12 @@ import '@blocknote/mantine/style.css'
 
 export default function BlockNoteEditor({ initialContent, onChange, userRole, isEditable = true }) {
   const [mounted, setMounted] = useState(false)
-  const [activeStyles, setActiveStyles] = useState({})
-  const [contextMenu, setContextMenu] = useState(null)
-  const [showImageModal, setShowImageModal] = useState(false)
   const fileInputRef = useRef(null)
   const editorRef = useRef(null)
   const lastContentRef = useRef(null)
   const editorContainerRef = useRef(null)
-  const updateDebounceRef = useRef(null)
+  const hasUserEditRef = useRef(false)
+  const editTimeoutRef = useRef(null)
 
   useEffect(() => {
     setMounted(true)
@@ -27,35 +25,24 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
 
   editorRef.current = editor
 
-  // Real-time polling - always update but safely
+  // Real-time updates - ONLY when not editing
   useEffect(() => {
-    if (!editor || !initialContent || isReadOnly) return
+    if (!editor || !initialContent || isReadOnly || hasUserEditRef.current) return
     
     const contentStr = JSON.stringify(initialContent)
     if (contentStr === lastContentRef.current) return
     
     lastContentRef.current = contentStr
 
-    // Check if editor has focus
-    const editorElement = editorContainerRef.current?.querySelector('.ProseMirror')
-    const hasFocus = editorElement && editorElement.contains(document.activeElement)
+    // Check if editor DOM has focus
+    const proseMirror = editorContainerRef.current?.querySelector('.ProseMirror')
+    const hasFocus = proseMirror && document.activeElement === proseMirror
 
-    if (hasFocus) {
-      // Debounce update if focused
-      if (updateDebounceRef.current) clearTimeout(updateDebounceRef.current)
-      updateDebounceRef.current = setTimeout(() => {
-        try {
-          editor.replaceBlocks(editor.document, initialContent)
-        } catch (e) {
-          console.error('Error updating:', e)
-        }
-      }, 500)
-    } else {
-      // Update immediately if not focused
+    if (!hasFocus) {
       try {
         editor.replaceBlocks(editor.document, initialContent)
       } catch (e) {
-        console.error('Error updating:', e)
+        console.error('Update error:', e)
       }
     }
   }, [initialContent, editor, isReadOnly])
@@ -64,10 +51,21 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
     if (!editor || isReadOnly) return
 
     const handleChange = () => {
+      hasUserEditRef.current = true
       onChange(editor.document)
+      
+      // Clear typing flag after 1 second of no changes
+      if (editTimeoutRef.current) clearTimeout(editTimeoutRef.current)
+      editTimeoutRef.current = setTimeout(() => {
+        hasUserEditRef.current = false
+      }, 1000)
     }
 
     editor.onChange(handleChange)
+
+    return () => {
+      if (editTimeoutRef.current) clearTimeout(editTimeoutRef.current)
+    }
   }, [editor, onChange, isReadOnly])
 
   const toggleStyle = (style) => {
@@ -84,7 +82,6 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
   const insertBlock = (type) => {
     if (!editor || isReadOnly) return
     const currentBlock = editor.getTextCursorPosition().block
-    
     if (type === 'codeBlock') {
       editor.insertBlocks([{ type: 'codeBlock', props: { language: 'javascript' }, content: [] }], currentBlock, 'after')
     } else {
@@ -99,13 +96,11 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
       const currentBlock = editor.getTextCursorPosition().block
       editor.insertBlocks([{ type: 'image', props: { url } }], currentBlock, 'after')
     }
-    setShowImageModal(false)
   }
 
   const insertImageFromFile = () => {
     if (isReadOnly) return
     fileInputRef.current?.click()
-    setShowImageModal(false)
   }
 
   const handleFileUpload = (e) => {
@@ -124,16 +119,6 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
     if (!editor || isReadOnly) return
     const currentBlock = editor.getTextCursorPosition().block
     editor.removeBlocks([currentBlock])
-    setContextMenu(null)
-  }
-
-  const handleContextMenu = (e) => {
-    if (isReadOnly) {
-      e.preventDefault()
-      return
-    }
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
   if (!mounted) {
@@ -148,40 +133,39 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
         .bn-editor.read-only { pointer-events: none !important; opacity: 0.7 !important; user-select: text !important; }
         .ProseMirror { color: white !important; }
         .ProseMirror p { color: rgba(255, 255, 255, 0.9) !important; }
-        .ProseMirror h1 { color: rgba(255, 255, 255, 1) !important; font-size: 2em !important; font-weight: 700 !important; }
-        .ProseMirror h2 { color: rgba(255, 255, 255, 1) !important; font-size: 1.5em !important; font-weight: 600 !important; }
-        .ProseMirror h3 { color: rgba(255, 255, 255, 1) !important; font-size: 1.2em !important; font-weight: 600 !important; }
-        .toolbar-btn { padding: 8px 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: rgba(255, 255, 255, 0.9); font-size: 14px; cursor: pointer; transition: all 0.2s; }
-        .toolbar-btn:hover:not(:disabled) { background: rgba(124, 58, 237, 0.2); border-color: rgba(167, 139, 250, 0.3); }
+        .ProseMirror h1 { color: rgba(255, 255, 255, 1) !important; font-size: 2em !important; }
+        .ProseMirror h2 { color: rgba(255, 255, 255, 1) !important; font-size: 1.5em !important; }
+        .ProseMirror h3 { color: rgba(255, 255, 255, 1) !important; font-size: 1.2em !important; }
+        .toolbar-btn { padding: 8px 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: rgba(255, 255, 255, 0.9); cursor: pointer; transition: all 0.2s; }
+        .toolbar-btn:hover:not(:disabled) { background: rgba(124, 58, 237, 0.2); }
         .toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .toolbar-btn.active { background: linear-gradient(135deg, rgba(124, 58, 237, 0.5), rgba(236, 72, 153, 0.5)) !important; box-shadow: 0 0 15px rgba(124, 58, 237, 0.4) !important; }
       `}</style>
 
       <div className="space-y-4">
         {!isReadOnly && (
-          <div className="glass rounded-lg p-3 border border-white/10" style={{background: 'rgba(255, 255, 255, 0.03)', backdropFilter: 'blur(10px)'}}>
+          <div className="glass rounded-lg p-3 border border-white/10">
             <div className="flex flex-wrap gap-2">
               <div className="flex gap-1 border-r border-white/10 pr-2">
-                <button onClick={() => toggleStyle('bold')} className="toolbar-btn" title="Bold"><strong>B</strong></button>
-                <button onClick={() => toggleStyle('italic')} className="toolbar-btn" title="Italic"><em>I</em></button>
-                <button onClick={() => toggleStyle('underline')} className="toolbar-btn" title="Underline"><u>U</u></button>
-                <button onClick={() => toggleStyle('strike')} className="toolbar-btn" title="Strike"><s>S</s></button>
-                <button onClick={() => toggleStyle('code')} className="toolbar-btn" title="Code">{'</>'}</button>
+                <button onClick={() => toggleStyle('bold')} className="toolbar-btn"><strong>B</strong></button>
+                <button onClick={() => toggleStyle('italic')} className="toolbar-btn"><em>I</em></button>
+                <button onClick={() => toggleStyle('underline')} className="toolbar-btn"><u>U</u></button>
+                <button onClick={() => toggleStyle('strike')} className="toolbar-btn"><s>S</s></button>
+                <button onClick={() => toggleStyle('code')} className="toolbar-btn">{'</>'}</button>
               </div>
               <div className="flex gap-1 border-r border-white/10 pr-2">
-                <button onClick={() => setHeading(1)} className="toolbar-btn" title="H1">H1</button>
-                <button onClick={() => setHeading(2)} className="toolbar-btn" title="H2">H2</button>
-                <button onClick={() => setHeading(3)} className="toolbar-btn" title="H3">H3</button>
+                <button onClick={() => setHeading(1)} className="toolbar-btn">H1</button>
+                <button onClick={() => setHeading(2)} className="toolbar-btn">H2</button>
+                <button onClick={() => setHeading(3)} className="toolbar-btn">H3</button>
               </div>
               <div className="flex gap-1 border-r border-white/10 pr-2">
-                <button onClick={() => insertBlock('bulletListItem')} className="toolbar-btn" title="Bullet">• List</button>
-                <button onClick={() => insertBlock('numberedListItem')} className="toolbar-btn" title="Number">1. List</button>
-                <button onClick={() => insertBlock('checkListItem')} className="toolbar-btn" title="Todo">☑ Todo</button>
+                <button onClick={() => insertBlock('bulletListItem')} className="toolbar-btn">• List</button>
+                <button onClick={() => insertBlock('numberedListItem')} className="toolbar-btn">1. List</button>
+                <button onClick={() => insertBlock('checkListItem')} className="toolbar-btn">☑ Todo</button>
               </div>
               <div className="flex gap-1">
-                <button onClick={() => insertBlock('codeBlock')} className="toolbar-btn" title="Code">Code</button>
-                <button onClick={() => insertBlock('table')} className="toolbar-btn" title="Table">Table</button>
-                <button onClick={() => setShowImageModal(true)} className="toolbar-btn" title="Image">Image</button>
+                <button onClick={() => insertBlock('codeBlock')} className="toolbar-btn">Code</button>
+                <button onClick={() => insertBlock('table')} className="toolbar-btn">Table</button>
+                <button onClick={() => insertImageFromUrl()} className="toolbar-btn">Image</button>
               </div>
             </div>
           </div>
@@ -193,32 +177,11 @@ export default function BlockNoteEditor({ initialContent, onChange, userRole, is
           </div>
         )}
 
-        <div ref={editorContainerRef} onContextMenu={handleContextMenu} className={isReadOnly ? 'read-only' : ''}>
+        <div ref={editorContainerRef} className={isReadOnly ? 'read-only' : ''}>
           <BlockNoteView editor={editor} theme="dark" editable={!isReadOnly} />
         </div>
 
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} />
-
-        {showImageModal && !isReadOnly && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
-            <div className="glass rounded-2xl p-8 max-w-md w-full border border-white/10">
-              <h2 className="text-2xl font-bold mb-6" style={{background: 'linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #06b6d4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>Insert Image</h2>
-              <div className="space-y-3">
-                <button onClick={insertImageFromUrl} className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg">URL</button>
-                <button onClick={insertImageFromFile} className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-medium rounded-lg">Upload</button>
-                <button onClick={() => setShowImageModal(false)} className="w-full px-4 py-2 bg-white/10 text-white rounded-lg">Cancel</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {contextMenu && !isReadOnly && (
-          <div style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 1000 }} className="rounded-lg border border-red-500/30">
-            <div style={{background: 'rgba(20, 20, 20, 0.95)'}}>
-              <button onClick={deleteBlock} className="w-full px-4 py-2 text-left text-red-400 hover:bg-red-500/20">🗑️ Delete</button>
-            </div>
-          </div>
-        )}
       </div>
     </>
   )
