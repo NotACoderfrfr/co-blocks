@@ -23,8 +23,7 @@ export default function EditorPage() {
   const [userRole, setUserRole] = useState('read')
   const [document, setDocument] = useState(null)
   const convex = useConvex()
-  const refetchIntervalRef = useRef(null)
-  const isTypingRef = useRef(false)
+  const isSavingRef = useRef(false)
 
   useEffect(() => {
     const id = localStorage.getItem('userId')
@@ -35,9 +34,9 @@ export default function EditorPage() {
     }
   }, [router])
 
-  // Real-time document polling - skip if user is typing
+  // Real-time polling - aggressive refresh
   const fetchDocument = useCallback(async () => {
-    if (!documentId || isTypingRef.current) return
+    if (!documentId) return
     try {
       const doc = await convex.query(api.documents.getDocument, { documentId })
       setDocument(doc)
@@ -53,14 +52,9 @@ export default function EditorPage() {
     }
 
     fetchDocument()
+    const interval = setInterval(fetchDocument, 300)
     
-    refetchIntervalRef.current = setInterval(fetchDocument, 500)
-    
-    return () => {
-      if (refetchIntervalRef.current) {
-        clearInterval(refetchIntervalRef.current)
-      }
-    }
+    return () => clearInterval(interval)
   }, [documentId, fetchDocument])
 
   const permissions = useQuery(
@@ -99,7 +93,6 @@ export default function EditorPage() {
     }
 
     updatePres()
-
     const interval = setInterval(updatePres, 30000)
 
     return () => {
@@ -120,15 +113,13 @@ export default function EditorPage() {
   }, [userId, documentId, removePresence])
 
   const handleSave = async (content, title) => {
-    if (userRole === "read") return
     if (!documentId || !userId || userRole === 'read') return
-
-    isTypingRef.current = true
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
     }
 
+    isSavingRef.current = true
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         await saveContent({
@@ -144,12 +135,10 @@ export default function EditorPage() {
             title,
           })
         }
-
-        isTypingRef.current = false
-        await fetchDocument()
       } catch (err) {
         console.error('Error saving:', err)
-        isTypingRef.current = false
+      } finally {
+        isSavingRef.current = false
       }
     }, 200)
   }
@@ -259,7 +248,6 @@ export default function EditorPage() {
                 />
               </div>
 
-              {/* Active Users */}
               {activeUsers && activeUsers.length > 0 && (
                 <div className="flex items-center space-x-2 px-4 py-2 glass rounded-lg border border-white/10">
                   <div className="flex -space-x-2">
@@ -300,7 +288,13 @@ export default function EditorPage() {
         </nav>
 
         <div className="max-w-4xl mx-auto px-6 py-8">
+          {userRole === 'read' ? (
+            <div className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 mb-4">
+              📖 You have read-only access to this document
+            </div>
+          ) : null}
           <BlockNoteEditor
+            key={`${documentId}-${userRole}`}
             initialContent={JSON.parse(document.content)}
             onChange={(content) => userRole !== 'read' && handleSave(content, document.title)}
             userRole={userRole}
@@ -308,7 +302,6 @@ export default function EditorPage() {
           />
         </div>
 
-        {/* Share Modal - Only for Admin */}
         {showShareModal && isOwnerOrAdmin && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
             <div className="glass-strong rounded-2xl p-8 max-w-2xl w-full border border-white/10">
