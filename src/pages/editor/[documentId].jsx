@@ -140,7 +140,7 @@ export default function EditorPage() {
       } finally {
         isSavingRef.current = false
       }
-    }, 200)
+    }, 1000)
   }
 
   const handleShare = async (e) => {
