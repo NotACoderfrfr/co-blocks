@@ -25,9 +25,7 @@ export default function EditorPage() {
   const saveTimeoutRef = useRef(null)
   const [userRole, setUserRole] = useState('read')
   const [document, setDocument] = useState(null)
-  const [editorKey, setEditorKey] = useState(0)
   const convex = useConvex()
-  const lastSavedContentRef = useRef(null)
 
   useEffect(() => {
     const id = localStorage.getItem('userId')
@@ -38,19 +36,12 @@ export default function EditorPage() {
     }
   }, [router])
 
-  // Real-time polling - always get fresh data
+  // Real-time polling - just update state, let editor handle it
   const fetchDocument = useCallback(async () => {
     if (!documentId) return
     try {
       const doc = await convex.query(api.documents.getDocument, { documentId })
-      if (doc) {
-        const currentContent = JSON.stringify(doc.content)
-        if (currentContent !== lastSavedContentRef.current) {
-          lastSavedContentRef.current = currentContent
-          setDocument(doc)
-          setEditorKey(prev => prev + 1)
-        }
-      }
+      setDocument(doc)
     } catch (err) {
       console.error('Fetch error:', err)
     }
@@ -145,8 +136,6 @@ export default function EditorPage() {
             title,
           })
         }
-
-        lastSavedContentRef.current = JSON.stringify(content)
       } catch (err) {
         console.error('Error saving:', err)
       }
@@ -267,7 +256,7 @@ export default function EditorPage() {
 
         <div className="max-w-4xl mx-auto px-6 py-8">
           {userRole === 'read' && <div className="p-6 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 mb-4">📖 Read-only access</div>}
-          <BlockNoteEditor key={editorKey} initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
+          <BlockNoteEditor initialContent={JSON.parse(document.content)} onChange={(content) => userRole !== 'read' && handleSave(content, document.title)} userRole={userRole} isEditable={userRole !== 'read'} />
         </div>
 
         {showLinkModal && isOwnerOrAdmin && (
